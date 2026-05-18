@@ -1,0 +1,606 @@
+"""Local symbol icon export and quality selection helpers."""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import shutil
+import time
+from pathlib import Path
+from typing import Any
+
+try:
+    from PIL import Image, ImageDraw
+except ImportError:  # pragma: no cover - handled by caller
+    Image = None
+    ImageDraw = None
+
+
+def _image_metrics(img) -> dict[str, Any]:
+    """Score one cropped icon candidate without using AI."""
+    if Image is None:
+        return {"score": 0.0, "reason": "pillow_missing"}
+
+    rgba = img.convert("RGBA")
+    w, h = rgba.size
+    if w <= 0 or h <= 0:
+        return {"score": 0.0, "reason": "empty"}
+
+    try:
+        import cv2
+        import numpy as np
+
+        arr = np.array(rgba, dtype=np.uint8)
+        rgb = arr[:, :, :3]
+        alpha = arr[:, :, 3]
+        bright = rgb.mean(axis=2)
+        chroma = rgb.max(axis=2) - rgb.min(axis=2)
+        mask = (alpha > 8) & (((chroma > 18) & (bright > 28)) | (bright > 85))
+
+        if int(mask.sum()) < 18:
+            return {"score": 0.0, "reason": "blank"}
+
+        ys, xs = np.where(mask)
+        x1, x2 = int(xs.min()), int(xs.max())
+        y1, y2 = int(ys.min()), int(ys.max())
+        bbox_w = x2 - x1 + 1
+        bbox_h = y2 - y1 + 1
+
+        margin = max(2, int(min(w, h) * 0.035))
+        touch_left = x1 <= margin
+        touch_top = y1 <= margin
+        touch_right = x2 >= w - 1 - margin
+        touch_bottom = y2 >= h - 1 - margin
+        edge_touches = sum((touch_left, touch_top, touch_right, touch_bottom))
+
+        content_ratio = float(mask.sum()) / float(w * h)
+        bbox_fill = float(mask.sum()) / float(max(1, bbox_w * bbox_h))
+        yellow_fill = (
+            (alpha > 8)
+            & (rgb[:, :, 0] > 180)
+            & (rgb[:, :, 1] > 140)
+            & (rgb[:, :, 2] < 80)
+            & (chroma > 80)
+        )
+        white_fill = (alpha > 8) & (bright > 170) & (chroma < 55)
+        red_fill = (
+            (alpha > 8)
+            & (rgb[:, :, 0] > 130)
+            & (rgb[:, :, 1] < 120)
+            & (rgb[:, :, 2] < 120)
+            & (chroma > 45)
+        )
+        size_score = min(1.0, min(w, h) / 88.0)
+        edge_score = max(0.0, 1.0 - edge_touches * 0.24)
+
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        sharp_score = min(1.0, sharpness / 520.0)
+
+        component_mask = mask.astype(np.uint8) * 255
+        num, _labels, stats, _centroids = cv2.connectedComponentsWithStats(component_mask, 8)
+        sizeable_components = 0
+        for i in range(1, num):
+            area = int(stats[i, cv2.CC_STAT_AREA])
+            if area >= max(14, int(mask.sum() * 0.025)):
+                sizeable_components += 1
+        fragment_penalty = max(0.0, min(0.22, (sizeable_components - 3) * 0.055))
+
+        area_score = min(1.0, content_ratio / 0.34) * 0.55 + min(1.0, bbox_fill / 0.45) * 0.45
+        score = (
+            size_score * 0.24
+            + edge_score * 0.34
+            + sharp_score * 0.18
+            + area_score * 0.24
+            - fragment_penalty
+        )
+
+        return {
+            "score": round(max(0.0, min(1.0, score)), 4),
+            "width": w,
+            "height": h,
+            "content_ratio": round(content_ratio, 4),
+            "bbox": [x1, y1, bbox_w, bbox_h],
+            "edge_touches": edge_touches,
+            "sharpness": round(sharpness, 2),
+            "components": sizeable_components,
+            "yellow_fill_ratio": round(float(yellow_fill.mean()), 4),
+            "white_fill_ratio": round(float(white_fill.mean()), 4),
+            "red_fill_ratio": round(float(red_fill.mean()), 4),
+        }
+    except Exception as exc:
+        return {
+            "score": round(min(1.0, min(w, h) / 96.0), 4),
+            "width": w,
+            "height": h,
+            "reason": f"basic_score:{exc}",
+        }
+
+
+def _reject_text_only_candidate(img) -> tuple[bool, str]:
+    """Reject payout numbers / text fragments before writing icon exports."""
+    try:
+        import numpy as np
+    except Exception:
+        return False, "no_numpy"
+
+    rgba = img.convert("RGBA")
+    w, h = rgba.size
+    if w < 22 or h < 22:
+        return True, "too_small"
+
+    arr = np.array(rgba, dtype=np.uint8)
+    rgb = arr[:, :, :3].astype(np.float32)
+    alpha = arr[:, :, 3] > 8
+    bright = rgb.mean(axis=2)
+    chroma = rgb.max(axis=2) - rgb.min(axis=2)
+
+    fg = alpha & ((bright > 58) | (chroma > 28))
+    colourful = alpha & (bright > 45) & (chroma > 35)
+    white_text = alpha & (bright > 125) & (chroma < 45)
+    yellow_text = alpha & (
+        (rgb[:, :, 0] > 130) & (rgb[:, :, 1] > 100) &
+        (rgb[:, :, 2] < 120) & (chroma > 35)
+    )
+    red_art = alpha & (rgb[:, :, 0] > 115) & (rgb[:, :, 1] < 105) & (rgb[:, :, 2] < 115) & (chroma > 38)
+    blue_art = alpha & (rgb[:, :, 2] > 105) & (rgb[:, :, 0] < 130) & (chroma > 38)
+    green_art = alpha & (rgb[:, :, 1] > 105) & (rgb[:, :, 0] < 145) & (chroma > 38)
+
+    fg_ratio = float(fg.mean())
+    colourful_ratio = float(colourful.mean())
+    text_ratio = float((white_text | yellow_text).mean())
+    yellow_ratio = float(yellow_text.mean())
+    non_yellow_art_ratio = float((red_art | blue_art | green_art).mean())
+    aspect = w / max(h, 1)
+    dense_letter_badge = (
+        min(w, h) >= 64
+        and aspect <= 1.45
+        and fg_ratio >= 0.45
+        and colourful_ratio >= 0.10
+        and text_ratio >= 0.10
+    )
+
+    if fg_ratio < 0.055:
+        return True, "empty_or_text_sliver"
+    if text_ratio > 0.045 and non_yellow_art_ratio < 0.050 and fg_ratio < 0.22:
+        return True, "payout_text_only"
+    if (
+        not dense_letter_badge
+        and yellow_ratio > 0.030
+        and non_yellow_art_ratio < 0.030
+        and colourful_ratio < 0.18
+    ):
+        return True, "yellow_number_only"
+    if aspect > 1.35 and h <= 54 and text_ratio > 0.030 and non_yellow_art_ratio < 0.045:
+        return True, "payout_number_strip"
+
+    return False, "ok"
+
+
+def _reject_low_quality_icon(metrics: dict[str, Any]) -> tuple[bool, str]:
+    """Reject numeric scraps and clipped fragments after local quality scoring."""
+    score = float(metrics.get("score", 0.0) or 0.0)
+    w = int(metrics.get("width", 0) or 0)
+    h = int(metrics.get("height", 0) or 0)
+    content_ratio = float(metrics.get("content_ratio", 0.0) or 0.0)
+    edge_touches = int(metrics.get("edge_touches", 0) or 0)
+
+    if content_ratio < 0.085:
+        return True, "low_content_text_scrap"
+    if score < 0.52:
+        return True, "low_quality_fragment"
+    # Post-processing intentionally trims dark paytable backgrounds tightly.
+    # Treat edge contact as clipping only when the crop still has lots of empty
+    # margin; compact, high-content icon crops often touch all four edges but
+    # are complete artwork.
+    if edge_touches >= 3 and content_ratio < 0.55:
+        return True, "clipped_fragment"
+    if min(w, h) < 42:
+        return True, "too_thin_fragment"
+    if w < 48 and h > 70 and score < 0.86:
+        return True, "vertical_fragment"
+    if h < 46 and score < 0.86:
+        return True, "horizontal_fragment"
+
+    return False, "ok"
+
+
+def _reject_final_symbol_candidate(metrics: dict[str, Any]) -> tuple[bool, str]:
+    """
+    Stricter filter for the final symbols/ folder.
+
+    icon_candidates/ is intentionally broad for debugging.  The final folder is
+    used as downstream input, so keep only crops that look like a standalone
+    icon instead of payout text, reel screenshots, or clipped fragments.
+    """
+    score = float(metrics.get("score", 0.0) or 0.0)
+    w = int(metrics.get("width", 0) or 0)
+    h = int(metrics.get("height", 0) or 0)
+    content_ratio = float(metrics.get("content_ratio", 0.0) or 0.0)
+    edge_touches = int(metrics.get("edge_touches", 0) or 0)
+    components = int(metrics.get("components", 0) or 0)
+    yellow_fill_ratio = float(metrics.get("yellow_fill_ratio", 0.0) or 0.0)
+    white_fill_ratio = float(metrics.get("white_fill_ratio", 0.0) or 0.0)
+    red_fill_ratio = float(metrics.get("red_fill_ratio", 0.0) or 0.0)
+    coloured_fill_ratio = yellow_fill_ratio + white_fill_ratio + red_fill_ratio
+    bbox = metrics.get("bbox") or [0, 0, 0, 0]
+    bbox_x = float(bbox[0] or 0)
+    bbox_y = float(bbox[1] or 0)
+    bbox_w = float(bbox[2] or 0)
+    bbox_h = float(bbox[3] or 0)
+    aspect = bbox_w / max(1.0, bbox_h)
+    crop_aspect = w / max(1.0, h)
+
+    if score < 0.60:
+        return True, "final_low_score"
+    if content_ratio < 0.105:
+        return True, "final_low_content"
+    if min(w, h) < 50:
+        return True, "final_too_small"
+    if aspect < 0.32 or aspect > 2.45:
+        return True, "final_bad_aspect"
+    if bbox_x > w * 0.42 or bbox_y > h * 0.40:
+        return True, "final_partial_symbol"
+    if (
+        yellow_fill_ratio > 0.060
+        and white_fill_ratio > 0.015
+        and red_fill_ratio < 0.010
+        and content_ratio > 0.50
+    ):
+        return True, "final_question_overlay"
+    is_coloured_full_icon = (
+        red_fill_ratio > 0.025
+        or yellow_fill_ratio > 0.025
+        or white_fill_ratio > 0.014
+    )
+    if edge_touches >= 3 and content_ratio > 0.60 and not is_coloured_full_icon:
+        return True, "final_full_rect_fragment"
+    if edge_touches >= 3 and content_ratio < 0.50:
+        return True, "final_likely_clipped"
+    if edge_touches >= 2 and score < 0.82 and not is_coloured_full_icon:
+        return True, "final_edge_clipped"
+    if components >= 9 and content_ratio < 0.22:
+        return True, "final_noisy_fragment"
+    if (
+        bbox_h <= 45
+        and content_ratio < 0.18
+        and coloured_fill_ratio < 0.022
+        and score < 0.92
+    ):
+        return True, "final_thin_symbol_fragment"
+    if (
+        bbox_h <= 50
+        and content_ratio < 0.24
+        and coloured_fill_ratio < 0.018
+        and score < 0.90
+    ):
+        return True, "final_low_art_symbol_fragment"
+    return False, "ok"
+
+
+def _final_quality_rank(rec: dict[str, Any]) -> tuple[float, float, float, str]:
+    """Rank final candidates by completeness first, then sharp local score."""
+    metrics = rec.get("metrics") or {}
+    score = float(rec.get("score", 0.0) or 0.0)
+    w = float(metrics.get("width", 0) or 0)
+    h = float(metrics.get("height", 0) or 0)
+    content_ratio = float(metrics.get("content_ratio", 0.0) or 0.0)
+    edge_touches = float(metrics.get("edge_touches", 0) or 0)
+    bbox = metrics.get("bbox") or [0, 0, 0, 0]
+    bbox_w = float(bbox[2] or 0)
+    bbox_h = float(bbox[3] or 0)
+
+    bbox_width_fill = bbox_w / max(1.0, w)
+    bbox_height_fill = bbox_h / max(1.0, h)
+    shape_fill = min(1.0, bbox_width_fill) * min(1.0, bbox_height_fill)
+    enough_canvas = min(1.0, min(w, h) / 82.0)
+    edge_penalty = min(0.35, edge_touches * 0.10)
+    completeness = (
+        shape_fill * 0.42
+        + min(1.0, content_ratio / 0.42) * 0.24
+        + enough_canvas * 0.20
+        + score * 0.14
+        - edge_penalty
+    )
+    return (completeness, score, content_ratio, str(rec.get("candidate_id", "")))
+
+
+def _dhash(img) -> int:
+    """Small perceptual hash used to group repeated crops of the same icon."""
+    if Image is None:
+        return 0
+    gray = img.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+    px = list(gray.getdata())
+    bits = 0
+    for y in range(8):
+        for x in range(8):
+            bits = (bits << 1) | int(px[y * 9 + x] > px[y * 9 + x + 1])
+    return bits
+
+
+def _hamming(a: int, b: int) -> int:
+    return int((a ^ b).bit_count())
+
+
+def _icons_visually_same(path_a: str, path_b: str) -> bool:
+    """
+    Confirm two crops are truly the same symbol before grouping.
+
+    The small dHash is intentionally fuzzy, but stylized card letters can collide
+    (for example Q and a).  A lightweight pixel comparison prevents those false
+    merges while still grouping near-identical repeated crops.
+    """
+    try:
+        with Image.open(path_a) as img_a, Image.open(path_b) as img_b:
+            a = img_a.convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
+            b = img_b.convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
+        import numpy as np
+
+        arr_a = np.array(a, dtype=np.float32)
+        arr_b = np.array(b, dtype=np.float32)
+        rgb_diff = float(np.mean(np.abs(arr_a[:, :, :3] - arr_b[:, :, :3])) / 255.0)
+        alpha_diff = float(np.mean(np.abs(arr_a[:, :, 3] - arr_b[:, :, 3])) / 255.0)
+        return rgb_diff <= 0.014 and alpha_diff <= 0.018
+    except Exception:
+        return False
+
+
+def _save_icon(img, out_path: Path, box_size: int = 160) -> Path:
+    rgba = img.convert("RGBA")
+    rgba.thumbnail((box_size, box_size), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (box_size, box_size), (0, 0, 0, 0))
+    canvas.alpha_composite(rgba, ((box_size - rgba.width) // 2, (box_size - rgba.height) // 2))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        canvas.save(out_path, "PNG")
+        return out_path
+    except PermissionError:
+        fallback = out_path.with_name(f"{out_path.stem}_{int(time.time())}{out_path.suffix}")
+        try:
+            canvas.save(fallback, "PNG")
+            return fallback
+        except PermissionError:
+            export_root = Path.cwd() / "symbol_table_exports" / f"{out_path.parent.name}_{int(time.time())}"
+            export_root.mkdir(parents=True, exist_ok=True)
+            final_fallback = export_root / out_path.name
+            canvas.save(final_fallback, "PNG")
+            return final_fallback
+
+
+def _prepare_output_dir(path: Path, *, clean: bool = False) -> Path:
+    """Create an output folder, falling back to a timestamped sibling if needed."""
+    def _is_writable_dir(candidate: Path) -> bool:
+        try:
+            probe = candidate / f"write_probe_{int(time.time())}.tmp"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return True
+        except OSError:
+            return False
+
+    def _try_mkdir(candidate: Path) -> Path | None:
+        try:
+            candidate.mkdir(parents=True, exist_ok=False)
+            return candidate if _is_writable_dir(candidate) else None
+        except FileExistsError:
+            return None
+        except PermissionError:
+            return None
+
+    if path.exists() and clean:
+        try:
+            if path.is_dir() and _is_writable_dir(path):
+                for child in path.iterdir():
+                    if child.is_dir():
+                        shutil.rmtree(child)
+                    else:
+                        child.unlink()
+                return path
+        except OSError:
+            pass
+
+    if path.exists():
+        try:
+            if not any(path.iterdir()) and _is_writable_dir(path):
+                return path
+        except PermissionError:
+            pass
+        base = path.with_name(f"{path.name}_{int(time.time())}")
+        for idx in range(100):
+            candidate = base if idx == 0 else base.with_name(f"{base.name}_{idx:02d}")
+            made = _try_mkdir(candidate)
+            if made is not None:
+                return made
+    else:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+        except PermissionError:
+            pass
+
+    fallback_base = Path.cwd() / "symbol_table_exports" / f"{path.name}_{int(time.time())}"
+    for idx in range(100):
+        candidate = fallback_base if idx == 0 else fallback_base.with_name(f"{fallback_base.name}_{idx:02d}")
+        try:
+            candidate.mkdir(parents=True, exist_ok=False)
+            return candidate
+        except FileExistsError:
+            continue
+        except PermissionError:
+            continue
+
+    fallback = Path.cwd() / "symbol_table_exports" / f"{path.name}_{int(time.time())}_last"
+    try:
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+    except PermissionError:
+        tmp_fallback = Path(os.environ.get("TEMP", str(Path.cwd()))) / f"{path.name}_{int(time.time())}"
+        tmp_fallback.mkdir(parents=True, exist_ok=True)
+        return tmp_fallback
+
+
+def _write_contact_sheet(records: list[dict[str, Any]], out_path: Path, title: str) -> None:
+    if Image is None or ImageDraw is None or not records:
+        return
+    thumb = 96
+    label_h = 30
+    cols = min(8, max(1, math.ceil(math.sqrt(len(records)))))
+    rows = math.ceil(len(records) / cols)
+    w = cols * 132 + 24
+    h = rows * (thumb + label_h + 16) + 54
+    sheet = Image.new("RGB", (w, h), (245, 245, 245))
+    draw = ImageDraw.Draw(sheet)
+    draw.text((12, 10), title, fill=(30, 30, 30))
+    for idx, rec in enumerate(records):
+        x = 12 + (idx % cols) * 132
+        y = 42 + (idx // cols) * (thumb + label_h + 16)
+        try:
+            icon = Image.open(rec["path"]).convert("RGBA")
+            icon.thumbnail((thumb, thumb), Image.Resampling.LANCZOS)
+            sheet.paste(
+                icon,
+                (x + (thumb - icon.width) // 2, y + (thumb - icon.height) // 2),
+                icon,
+            )
+        except Exception:
+            pass
+        label = rec.get("label") or rec.get("candidate_id") or rec.get("final_id") or str(idx)
+        draw.text((x, y + thumb + 3), label[:18], fill=(40, 40, 40))
+        draw.text((x, y + thumb + 16), f"score {rec.get('score', 0):.2f}", fill=(90, 90, 90))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(out_path, "JPEG", quality=92)
+
+
+def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, Any]:
+    """
+    Save every OpenCV icon crop and a locally selected best set.
+
+    Output:
+      symbol_table/icon_candidates/
+      symbol_table/symbols/
+      symbol_table/icon_export_metadata.json
+    """
+    if Image is None:
+        return {"candidate_count": 0, "final_count": 0, "error": "pillow_missing"}
+
+    candidates_dir = _prepare_output_dir(symbol_table_dir / "icon_candidates", clean=True)
+    final_dir = _prepare_output_dir(symbol_table_dir / "symbols", clean=True)
+
+    records: list[dict[str, Any]] = []
+    for idx, img in enumerate(icon_images):
+        rejected, reject_reason = _reject_text_only_candidate(img)
+        if rejected:
+            continue
+        metrics = _image_metrics(img)
+        rejected, quality_reason = _reject_low_quality_icon(metrics)
+        if rejected:
+            continue
+        metrics["export_filter"] = reject_reason
+        metrics["quality_filter"] = quality_reason
+        score = float(metrics.get("score", 0.0))
+        candidate_id = f"candidate_{idx:03d}"
+        filename = f"{candidate_id}_score_{score:.2f}.png"
+        out_path = candidates_dir / filename
+        out_path = _save_icon(img, out_path)
+        phash = _dhash(img)
+        records.append({
+            "candidate_id": candidate_id,
+            "path": str(out_path),
+            "score": score,
+            "hash": f"{phash:016x}",
+            "source_page_index": img.info.get("source_page_index"),
+            "source_page_path": img.info.get("source_page_path"),
+            "source_box_index": img.info.get("source_box_index"),
+            "source_box": img.info.get("source_box"),
+            "metrics": metrics,
+        })
+
+    # Group visually similar crops; keep the highest-quality crop per group.
+    # The broad candidate folder remains useful for inspection, while the final
+    # symbols folder uses a stricter quality gate.
+    final_pool = []
+    for rec in records:
+        final_rejected, final_reason = _reject_final_symbol_candidate(rec.get("metrics", {}))
+        rec["final_filter"] = final_reason
+        if not final_rejected:
+            final_pool.append(rec)
+
+    groups: list[dict[str, Any]] = []
+    for rec in sorted(final_pool, key=_final_quality_rank, reverse=True):
+        rec_hash = int(rec["hash"], 16)
+        matched = None
+        for group in groups:
+            if (
+                _hamming(rec_hash, int(group["hash"], 16)) <= 8
+                and _icons_visually_same(rec["path"], group["best"]["path"])
+            ):
+                matched = group
+                break
+        if matched is None:
+            groups.append({
+                "group_id": len(groups),
+                "hash": rec["hash"],
+                "best": rec,
+                "members": [rec["candidate_id"]],
+            })
+        else:
+            matched["members"].append(rec["candidate_id"])
+
+    final_records = []
+    for group in sorted(groups, key=lambda g: g["best"].get("candidate_id", "")):
+        best = group["best"]
+        final_id = f"symbol_candidate_{group['group_id']:03d}"
+        final_path = final_dir / f"{final_id}_from_{best['candidate_id']}_score_{best['score']:.2f}.png"
+        with Image.open(best["path"]) as best_img:
+            final_path = _save_icon(best_img.copy(), final_path)
+        final_rec = {
+            **best,
+            "final_id": final_id,
+            "path": str(final_path),
+            "group_members": group["members"],
+        }
+        final_records.append(final_rec)
+
+    metadata = {
+        "candidate_count": len(records),
+        "final_count": len(final_records),
+        "candidates_dir": str(candidates_dir),
+        "symbols_dir": str(final_dir),
+        "final_icons_dir": str(final_dir),
+        "candidates": records,
+        "final_icons": final_records,
+    }
+    run_suffix = ""
+    if final_dir.name.startswith("symbols_"):
+        run_suffix = final_dir.name.removeprefix("symbols_")
+    elif candidates_dir.name.startswith("icon_candidates_"):
+        run_suffix = candidates_dir.name.removeprefix("icon_candidates_")
+
+    metadata_path = symbol_table_dir / "icon_export_metadata.json"
+    try:
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    except PermissionError:
+        metadata_path = candidates_dir.parent / "icon_export_metadata.json"
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    if run_suffix:
+        try:
+            timestamped_metadata = candidates_dir.parent / f"icon_export_metadata_{run_suffix}.json"
+            timestamped_metadata.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+
+    try:
+        _write_contact_sheet(records, symbol_table_dir / "icon_candidates_contact_sheet.jpg", "All OpenCV icon candidates")
+        _write_contact_sheet(final_records, symbol_table_dir / "final_icons_contact_sheet.jpg", "Local best icon candidates")
+    except PermissionError:
+        _write_contact_sheet(records, candidates_dir.parent / "icon_candidates_contact_sheet.jpg", "All OpenCV icon candidates")
+        _write_contact_sheet(final_records, candidates_dir.parent / "final_icons_contact_sheet.jpg", "Local best icon candidates")
+    if run_suffix:
+        try:
+            _write_contact_sheet(records, candidates_dir.parent / f"icon_candidates_contact_sheet_{run_suffix}.jpg", "All OpenCV icon candidates")
+            _write_contact_sheet(final_records, candidates_dir.parent / f"final_icons_contact_sheet_{run_suffix}.jpg", "Local best icon candidates")
+        except OSError:
+            pass
+    metadata["metadata_path"] = str(metadata_path)
+    return metadata

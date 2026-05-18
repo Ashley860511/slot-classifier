@@ -1,0 +1,28 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local runtime overrides
+.runtime_overrides/
+*.log
+
+# Input videos and generated classifier output
+project/input_videos/*
+!project/input_videos/.gitkeep
+project/output/*
+!project/output/.gitkeep
+
+# Generated Figma export
+figma_export/images/*
+figma_export/figma_manifest.json
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

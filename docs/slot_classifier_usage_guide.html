@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slot 遊戲分類器使用說明</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --text: #1f2933;
+      --muted: #5d6b7a;
+      --line: #d9dee7;
+      --accent: #0f766e;
+      --accent-strong: #0f4f49;
+      --accent-soft: #e7f6f3;
+      --warn: #9a3412;
+      --warn-soft: #fff4e6;
+      --ok: #166534;
+      --ok-soft: #edf9f0;
+      --code-bg: #111827;
+      --code-text: #e5e7eb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft JhengHei", "Noto Sans TC", "Segoe UI", Arial, sans-serif;
+      line-height: 1.68;
+    }
+
+    main {
+      width: min(1120px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 36px 0 72px;
+    }
+
+    header {
+      padding: 30px 0 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(30px, 4vw, 44px);
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.35;
+    }
+
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 18px;
+    }
+
+    p { margin: 0 0 12px; color: var(--muted); }
+    strong { color: var(--text); }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    section {
+      margin-top: 22px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    ul, ol {
+      margin: 10px 0 0 22px;
+      padding: 0;
+      color: var(--muted);
+    }
+
+    li { margin: 7px 0; }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: #eef2f7;
+      color: #1f2933;
+      font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+      font-size: .93em;
+    }
+
+    pre {
+      margin: 12px 0;
+      padding: 14px 16px;
+      overflow-x: auto;
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: var(--code-text);
+      line-height: 1.5;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    table {
+      width: 100%;
+      margin-top: 14px;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      border: 1px solid var(--line);
+    }
+
+    th {
+      background: #eef2f7;
+      color: var(--text);
+    }
+
+    .lead {
+      max-width: 900px;
+      font-size: 17px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .toc {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .toc a {
+      display: block;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      color: var(--accent-strong);
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .card h3 { margin-top: 0; }
+
+    .note {
+      margin: 14px 0;
+      padding: 14px 16px;
+      border: 1px solid #b7ddd6;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+    }
+
+    .warning {
+      border-color: #fed7aa;
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .success {
+      border-color: #bbf7d0;
+      background: var(--ok-soft);
+      color: var(--ok);
+    }
+
+    .path { word-break: break-all; }
+
+    @media (max-width: 860px) {
+      main { width: min(100vw - 24px, 1120px); padding-top: 20px; }
+      section { padding: 18px; }
+      .toc, .grid { grid-template-columns: 1fr; }
+      table { font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Slot 遊戲分類器使用說明</h1>
+    <p class="lead">
+      這份文件整理目前 <strong>slot_classifier_figma_share_package</strong> 的日常使用方式：如何準備 Python 環境、放入影片、執行分類、查看輸出、產生 symbol 圖，以及匯出 Figma / FigJam 研究看板素材。
+    </p>
+    <div class="meta">
+      <span class="pill">更新日期：2026-05-15</span>
+      <span class="pill">適用 Windows</span>
+      <span class="pill">Python 3.10 建議</span>
+      <span class="pill">OpenCV + PaddleOCR</span>
+      <span class="pill">分類 + Symbol 裁切 + Figma 匯出</span>
+    </div>
+    <nav class="toc" aria-label="目錄">
+      <a href="#quick-start">最快使用流程</a>
+      <a href="#folder">資料夾用途</a>
+      <a href="#environment">環境安裝</a>
+      <a href="#classification">執行分類</a>
+      <a href="#outputs">輸出結果</a>
+      <a href="#symbols">Symbol 圖輸出</a>
+      <a href="#figma">Figma 匯出</a>
+      <a href="#troubleshooting">常見問題</a>
+      <a href="#references">參考文件</a>
+    </nav>
+  </header>
+
+  <section id="quick-start">
+    <h2>最快使用流程</h2>
+    <ol>
+      <li>把影片放進 <code>project\input_videos</code>。</li>
+      <li>第一次使用先執行 <code>setup_venv.ps1</code> 安裝 Python 套件。</li>
+      <li>用 <code>check_environment.ps1</code> 確認環境可用。</li>
+      <li>雙擊 <code>run_classify_and_symbols.bat</code>，或在 PowerShell 執行它。</li>
+      <li>到 <code>project\output</code> 查看每支影片的分類截圖、CSV 和 symbol 輸出。</li>
+      <li>需要 Figma / FigJam 看板時，再執行 <code>run_figma_export.ps1</code>。</li>
+    </ol>
+    <div class="note success">
+      一般使用者建議優先用 <code>run_classify_and_symbols.bat</code>。它會用專案內的 <code>.venv</code> 執行 <code>app\main.py</code>，跑完後輸出會集中在 <code>project\output</code>。
+    </div>
+  </section>
+
+  <section id="folder">
+    <h2>資料夾用途</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>位置</th>
+          <th>用途</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>app\main.py</code></td>
+          <td>主要分類器。讀取影片、擷取影格、OCR 判斷、分類截圖、挑選代表圖，並可接續處理 symbol 圖。</td>
+        </tr>
+        <tr>
+          <td><code>app\generate_symbol_table.py</code></td>
+          <td>從 Help / Paytable 畫面偵測 symbol，輸出 symbol PNG、contact sheet 和 HTML 檢查頁。</td>
+        </tr>
+        <tr>
+          <td><code>project\input_videos</code></td>
+          <td>放入要分析的 slot 遊戲錄影。建議使用 <code>.mp4</code>。</td>
+        </tr>
+        <tr>
+          <td><code>project\output</code></td>
+          <td>分類器輸出位置。每支影片會有自己的資料夾，內含分類截圖、低分圖、CSV 和 symbol 結果。</td>
+        </tr>
+        <tr>
+          <td><code>figma_tools</code></td>
+          <td>Figma / FigJam 匯入工具，包含匯出 manifest 的 Python 腳本與 Figma Desktop plugin。</td>
+        </tr>
+        <tr>
+          <td><code>figma_export</code></td>
+          <td>執行 Figma 匯出後產生的素材包，包含 <code>figma_manifest.json</code> 和代表截圖。</td>
+        </tr>
+        <tr>
+          <td><code>.venv</code></td>
+          <td>本專案專用 Python 環境。若環境壞掉，可以刪除後重新執行 <code>setup_venv.ps1</code>。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="environment">
+    <h2>環境安裝</h2>
+    <h3>1. 建議版本</h3>
+    <p>建議使用 <strong>Python 3.10</strong>。目前套件鎖定如下：</p>
+    <pre><code>numpy==1.26.4
+opencv-python==4.6.0.66
+paddlepaddle==2.6.2
+paddleocr==2.7.3</code></pre>
+    <p>不建議直接使用 NumPy 2.x 或 Python 3.12，因為 PaddleOCR / PaddlePaddle 在 Windows 上較容易遇到相容性問題。</p>
+
+    <h3>2. 安裝套件</h3>
+    <p>在專案資料夾開啟 PowerShell：</p>
+    <pre><code>cd C:\Users\ashleyli\Documents\Codex\2026-04-30\files-mentioned-by-the-user-main\slot_classifier_figma_share_package
+.\setup_venv.ps1</code></pre>
+
+    <h3>3. 檢查環境</h3>
+    <pre><code>.\check_environment.ps1</code></pre>
+    <p>這會檢查 Python、OpenCV、PaddleOCR 等套件是否能正常載入。</p>
+
+    <div class="note warning">
+      若安裝 PaddleOCR 時出現 Windows Long Path 或路徑過長錯誤，建議把整個資料夾搬到較短路徑，例如 <code>D:\slot_classifier_figma_share_package</code> 或 <code>C:\slot_classifier_figma_share_package</code>，再重新建立 <code>.venv</code>。
+    </div>
+  </section>
+
+  <section id="classification">
+    <h2>執行分類</h2>
+    <h3>方式 A：雙擊批次檔</h3>
+    <p>把影片放入 <code>project\input_videos</code> 後，雙擊：</p>
+    <pre><code>run_classify_and_symbols.bat</code></pre>
+    <p>這會處理 input 資料夾內的所有影片。</p>
+
+    <h3>方式 B：用 PowerShell 執行</h3>
+    <pre><code>.\run_classifier.ps1</code></pre>
+    <p>這會直接執行 <code>app\main.py</code>，使用專案內的 <code>.venv\Scripts\python.exe</code>，如果找不到才會改用系統 Python。</p>
+
+    <h3>方式 C：只跑指定影片</h3>
+    <p>如果只想跑單一影片，可以用影片檔名 stem 指定。假設影片是 <code>Perfect Strike.mp4</code>：</p>
+    <pre><code>.\run_classify_and_symbols.bat "Perfect Strike"</code></pre>
+
+    <h3>方式 D：傳入進階參數</h3>
+    <p>批次檔會把 <code>--</code> 開頭的參數轉交給 <code>app\main.py</code>。例如：</p>
+    <pre><code>.\run_classify_and_symbols.bat --video-id "Perfect Strike" --symbol-debug
+.\run_classify_and_symbols.bat --skip-symbols</code></pre>
+  </section>
+
+  <section id="outputs">
+    <h2>輸出結果</h2>
+    <p>分類完成後，主要結果會出現在：</p>
+    <pre><code>project\output\&lt;video_id&gt;\</code></pre>
+    <table>
+      <thead>
+        <tr>
+          <th>輸出</th>
+          <th>說明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>Basegame</code></td>
+          <td>主遊戲畫面，通常包含 spin、auto、下注、餘額等底部 UI。</td>
+        </tr>
+        <tr>
+          <td><code>Feature game</code></td>
+          <td>Free game、Bonus、Remaining Free Spins 等正在進行中的特色遊戲畫面。</td>
+        </tr>
+        <tr>
+          <td><code>BigWin</code></td>
+          <td>Big Win、Mega Win、Super Win、Jumbo Win 等大獎畫面。</td>
+        </tr>
+        <tr>
+          <td><code>Transition</code></td>
+          <td>進入或離開 feature 的轉場，例如 Start、Continue、Confirm。</td>
+        </tr>
+        <tr>
+          <td><code>Result</code></td>
+          <td>Total Win、Collect、You've won 等結算畫面。</td>
+        </tr>
+        <tr>
+          <td><code>Help</code></td>
+          <td>規則說明、Paytable、Symbol Payout Values 等頁面，也是 symbol 裁切的主要來源。</td>
+        </tr>
+        <tr>
+          <td><code>Feature Buy</code></td>
+          <td>購買 feature 的彈窗或入口畫面。</td>
+        </tr>
+        <tr>
+          <td><code>loading</code></td>
+          <td>載入頁、logo、進度條、授權資訊等。</td>
+        </tr>
+        <tr>
+          <td><code>Other</code></td>
+          <td>無法穩定歸類或不適合研究看板的畫面。</td>
+        </tr>
+        <tr>
+          <td><code>low_score</code></td>
+          <td>低信心或品質較差的圖片，保留給人工檢查。</td>
+        </tr>
+        <tr>
+          <td><code>classification_result.csv</code></td>
+          <td>分類紀錄，包含每張候選圖的分類、分數與 OCR 資訊。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="symbols">
+    <h2>Symbol 圖輸出</h2>
+    <p>
+      目前分類器已和 <code>generate_symbol_table.py</code> 整合。分類完成後，工具會嘗試從 <code>Help</code> 或 <code>low_score\Help</code> 中找 Paytable 畫面，再裁切 symbol 圖。
+    </p>
+    <p>常見輸出位置：</p>
+    <pre><code>project\output\&lt;video_id&gt;\symbol_table\
+project\output\&lt;video_id&gt;\symbol_table\symbols\
+project\output\&lt;video_id&gt;\symbol_table\final_icons_contact_sheet.jpg</code></pre>
+
+    <div class="grid">
+      <div class="card">
+        <h3>適合做什麼</h3>
+        <ul>
+          <li>建立競品 symbol 素材庫。</li>
+          <li>比較高低階符號、美術風格、特殊符號。</li>
+          <li>整理成 Figma / FigJam icon board。</li>
+          <li>後續人工命名、分級、標註。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>可能需要人工檢查的情況</h3>
+        <ul>
+          <li>Paytable 圖上有大量 payout 數字貼近 symbol。</li>
+          <li>Help 頁是滾動式網頁，畫面只擷取到部分內容。</li>
+          <li>symbol 被特效、框線、文字遮擋。</li>
+          <li>部分遊戲的 paytable 版面和一般 slot 差異很大。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="figma">
+    <h2>Figma / FigJam 匯出</h2>
+    <p>分類完成後，可以產生 Figma / FigJam 匯入用資料：</p>
+    <pre><code>.\run_figma_export.ps1</code></pre>
+    <p>輸出會在：</p>
+    <pre><code>figma_export\
+  figma_manifest.json
+  images\</code></pre>
+    <p>匯入 Figma / FigJam 的步驟：</p>
+    <ol>
+      <li>開啟 Figma Desktop。</li>
+      <li>進入 <code>Plugins</code>，選擇 <code>Development</code>，再選 <code>Import plugin from manifest...</code>。</li>
+      <li>選取 <code>figma_tools\figma_plugin\manifest.json</code>。</li>
+      <li>開啟一個 Figma 或 FigJam 檔案。</li>
+      <li>執行 plugin：<code>Slot Research Board Importer</code>。</li>
+      <li>當 plugin 要求選資料夾時，選整個 <code>figma_export</code> 資料夾。</li>
+    </ol>
+    <div class="note">
+      Figma 匯出預設保留每支影片的代表圖，例如 loading、Basegame、Transition、FreeGame、BUY FEATURE、Result。BigWin 會盡量保留最多三種代表大獎階段。<code>Help</code> 與 <code>Other</code> 不會放進 Figma 研究看板。
+    </div>
+  </section>
+
+  <section id="troubleshooting">
+    <h2>常見問題</h2>
+    <h3>PowerShell 無法執行 .ps1</h3>
+    <p>如果系統阻擋 <code>.ps1</code>，可以用目前使用者範圍調整執行政策：</p>
+    <pre><code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code></pre>
+
+    <h3>安裝套件失敗或 PaddleOCR 無法安裝</h3>
+    <ul>
+      <li>確認 Python 是 3.10。</li>
+      <li>確認專案路徑不要太長。</li>
+      <li>刪除 <code>.venv</code> 後重新執行 <code>setup_venv.ps1</code>。</li>
+      <li>若公司網路或 VPN 擋住 pip 下載，需要切換網路或請 IT 協助。</li>
+    </ul>
+
+    <h3>分類結果太少或很多圖進 low_score</h3>
+    <ul>
+      <li>先確認影片本身是否清晰，是否有完整遊戲畫面。</li>
+      <li>檢查 <code>classification_result.csv</code> 內的分類與分數。</li>
+      <li>查看 <code>low_score</code>，有些圖可能只是信心較低，仍可人工使用。</li>
+      <li>若是特殊玩法，例如足球、卡牌、輪盤式 bonus，可能會被放進 <code>Other</code>。</li>
+    </ul>
+
+    <h3>Figma plugin 找不到圖片</h3>
+    <ul>
+      <li>確認已先執行 <code>run_figma_export.ps1</code>。</li>
+      <li>選資料夾時要選整個 <code>figma_export</code>，不是只選 <code>images</code>。</li>
+      <li>確認 <code>figma_export\figma_manifest.json</code> 存在。</li>
+    </ul>
+  </section>
+
+  <section id="references">
+    <h2>本文件參考資料</h2>
+    <p>本使用說明依據資料夾內現有技術文件與腳本整理：</p>
+    <ul>
+      <li><code>README.md</code></li>
+      <li><code>python_environment_install_guide.html</code></li>
+      <li><code>slot_classifier_tech_summary_selfcontained.html</code></li>
+      <li><code>generate_symbol_table_tech_summary.html</code></li>
+      <li><code>run_classifier.ps1</code>、<code>run_figma_export.ps1</code>、<code>run_classify_and_symbols.bat</code></li>
+    </ul>
+    <p class="path">
+      專案路徑：<code>C:\Users\ashleyli\Documents\Codex\2026-04-30\files-mentioned-by-the-user-main\slot_classifier_figma_share_package</code>
+    </p>
+  </section>
+</main>
+</body>
+</html>

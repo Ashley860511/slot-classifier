@@ -1,0 +1,185 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, Arial, sans-serif;
+      color: #222;
+      background: #fff;
+    }
+    body {
+      margin: 0;
+      padding: 18px;
+      font-size: 13px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: #069b47;
+    }
+    p {
+      margin: 0 0 12px;
+      line-height: 1.45;
+      color: #555;
+    }
+    .drop {
+      border: 1px dashed #9a9a9a;
+      border-radius: 8px;
+      padding: 14px;
+      background: #fafafa;
+      margin-bottom: 12px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 8px;
+    }
+    button {
+      border: none;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #import {
+      background: #00a651;
+      color: white;
+      width: 100%;
+    }
+    #import:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+    #cancel {
+      background: transparent;
+      color: #666;
+      width: 100%;
+      margin-top: 8px;
+    }
+    .status {
+      min-height: 36px;
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 6px;
+      background: #f3f3f3;
+      white-space: pre-wrap;
+    }
+    code {
+      background: #f0f0f0;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Slot Research Board Importer</h1>
+  <p>Select the generated <code>figma_export</code> folder. The plugin will read <code>figma_manifest.json</code> and place every image as a separate editable node.</p>
+
+  <div class="drop">
+    <strong>Choose export folder</strong>
+    <input id="folder" type="file" webkitdirectory directory multiple />
+  </div>
+
+  <button id="import" disabled>Import board</button>
+  <button id="cancel">Cancel</button>
+  <div id="status" class="status">No folder selected.</div>
+
+  <script>
+    const folderInput = document.getElementById("folder");
+    const importButton = document.getElementById("import");
+    const cancelButton = document.getElementById("cancel");
+    const statusBox = document.getElementById("status");
+    let selectedFiles = [];
+
+    function setStatus(text) {
+      statusBox.textContent = text;
+    }
+
+    function normalizedPath(file) {
+      return (file.webkitRelativePath || file.name).replace(/\\/g, "/");
+    }
+
+    function findManifest(files) {
+      return files.find(file => normalizedPath(file).endsWith("figma_manifest.json"));
+    }
+
+    folderInput.addEventListener("change", () => {
+      selectedFiles = Array.from(folderInput.files || []);
+      const manifest = findManifest(selectedFiles);
+      const imageCount = selectedFiles.filter(file => /\/images\/.+\.(png|jpg|jpeg|webp)$/i.test(normalizedPath(file))).length;
+      const featureBuyCount = selectedFiles.filter(file => /\/images\/.+featurebuy\.(png|jpg|jpeg|webp)$/i.test(normalizedPath(file))).length;
+      importButton.disabled = !manifest || imageCount === 0;
+      if (!manifest) {
+        setStatus("No figma_manifest.json found. Choose the whole figma_export folder.");
+      } else {
+        setStatus(`Ready: ${imageCount} image files found.\nBUY FEATURE images: ${featureBuyCount}`);
+      }
+    });
+
+    async function readText(file) {
+      return await file.text();
+    }
+
+    async function readBytes(file) {
+      const buffer = await file.arrayBuffer();
+      return buffer;
+    }
+
+    importButton.addEventListener("click", async () => {
+      try {
+        importButton.disabled = true;
+        setStatus("Reading manifest and images...");
+        const manifestFile = findManifest(selectedFiles);
+        const manifest = JSON.parse(await readText(manifestFile));
+
+        const images = {};
+        const imageFiles = selectedFiles.filter(file => /\/images\/.+\.(png|jpg|jpeg|webp)$/i.test(normalizedPath(file)));
+        for (let index = 0; index < imageFiles.length; index += 1) {
+          const file = imageFiles[index];
+          const path = normalizedPath(file);
+          const imageMarkerIndex = path.lastIndexOf("/images/");
+          const relativeFromExport = imageMarkerIndex >= 0
+            ? path.slice(imageMarkerIndex + 1)
+            : path.replace(/^.*?\//, "");
+          const buffer = await readBytes(file);
+          images[relativeFromExport] = {
+            name: file.name,
+            bytes: buffer,
+          };
+          setStatus(`Reading images... ${index + 1}/${imageFiles.length}`);
+        }
+
+        setStatus("Sending board to Figma...");
+        parent.postMessage({
+          pluginMessage: {
+            type: "import-board",
+            manifest,
+            images,
+          }
+        }, "*");
+      } catch (error) {
+        importButton.disabled = false;
+        setStatus(`Import failed before sending to Figma:\n${error.message || error}`);
+      }
+    });
+
+    cancelButton.addEventListener("click", () => {
+      parent.postMessage({ pluginMessage: { type: "cancel" } }, "*");
+    });
+
+    window.onmessage = (event) => {
+      const message = event.data.pluginMessage;
+      if (!message) return;
+      if (message.type === "done") {
+        setStatus("Done. You can close this plugin window.");
+      }
+      if (message.type === "error") {
+        importButton.disabled = false;
+        setStatus(`Figma import failed:\n${message.message}`);
+      }
+    };
+  </script>
+</body>
+</html>

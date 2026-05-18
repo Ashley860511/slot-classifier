@@ -1,0 +1,553 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slot 遊戲截圖分類工具技術總結</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --text: #1f2933;
+      --muted: #667085;
+      --line: #d9dee7;
+      --accent: #0f8f5f;
+      --accent-soft: #e8f6ef;
+      --warn-soft: #fff7e6;
+      --code: #263445;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 48px 24px 72px;
+    }
+
+    header {
+      margin-bottom: 28px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 34px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+      line-height: 1.35;
+    }
+
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 17px;
+    }
+
+    p { margin: 0 0 12px; }
+
+    ul, ol {
+      margin: 10px 0 0 22px;
+      padding: 0;
+    }
+
+    li { margin: 6px 0; }
+
+    section {
+      margin-top: 24px;
+      padding: 24px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .lead {
+      max-width: 860px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 14px;
+    }
+
+    .card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .card h3 { margin-top: 0; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .step {
+      padding: 14px 12px;
+      min-height: 86px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent);
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: #eef1f5;
+      color: var(--code);
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.92em;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 15px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      vertical-align: top;
+      border: 1px solid var(--line);
+      text-align: left;
+    }
+
+    th {
+      background: #f0f3f7;
+      font-weight: 700;
+    }
+
+    .note {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border: 1px solid #f0d28a;
+      border-radius: 8px;
+      background: var(--warn-soft);
+    }
+
+    .muted { color: var(--muted); }
+
+    @media (max-width: 820px) {
+      main { padding: 32px 16px 48px; }
+      h1 { font-size: 28px; }
+      .grid, .flow { grid-template-columns: 1fr; }
+      section { padding: 18px; }
+      table { font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+<div style="position:sticky;top:0;z-index:99999;background:#111827;color:#fff;padding:10px 14px;font:14px/1.4 Arial,sans-serif;border-bottom:1px solid #374151;">
+  Self-contained research snapshot. Images are embedded in this file for external sharing.
+</div>
+
+  <main>
+    <header>
+      <h1>Slot 遊戲截圖分類工具技術總結</h1>
+      <p class="lead">
+        這個工具用來批次讀取遊戲錄影，自動擷取代表性截圖，並依照 slot 遊戲流程分類成 Basegame、Feature game、Big Win、Result、Transition、Help、Feature Buy、loading 與 Other。最新版已結合 symbol 裁切工具，跑完分類後會同步從 Help / Paytable 畫面輸出 symbol 圖，方便後續美術調研、競品整理、Figma / FigJam 視覺化與素材資料庫建立。
+      </p>
+      <div class="meta">
+        <span class="pill">最後更新：2026-05-15</span>
+        <span class="pill">Python</span>
+        <span class="pill">OpenCV</span>
+        <span class="pill">PaddleOCR</span>
+        <span class="pill">影像特徵分群</span>
+        <span class="pill">批次影片處理</span>
+        <span class="pill">Symbol 圖自動裁切</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>工具目標</h2>
+      <p>
+        主要目標不是單純截圖，而是從大量錄影中整理出可供人工判讀與美術參考的「乾淨代表圖」。工具會盡量排除模糊、爆光、遮擋盤面、大範圍缺少細節、半透明文字雜訊過多的畫面，並把低信心圖片放進 <code>low_score</code> 供人工檢查。整合 symbol 裁切後，Help / Paytable 截圖也會被進一步轉成可檢查、可整理、可再利用的 symbol 圖。
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>批次處理</h3>
+          <p>支援在 input 資料夾放入多支影片，輸出時依影片名稱建立各自的分類資料夾與 CSV。</p>
+        </div>
+        <div class="card">
+          <h3>研究導向</h3>
+          <p>最後保留的圖片用於調研與 Figma 整理，因此分類重視「能代表該狀態」而不是只追求最高 OCR 分數。</p>
+        </div>
+        <div class="card">
+          <h3>Symbol 素材化</h3>
+          <p>分類後會自動掃描 Help / Paytable 頁，輸出 <code>symbol_table/symbols</code> 與 contact sheet，讓 symbol 圖能直接進入後續競品素材整理。</p>
+        </div>
+        <div class="card">
+          <h3>一鍵執行</h3>
+          <p>新增 <code>run_classify_and_symbols.bat</code>，可雙擊跑全部影片，也可用影片名稱只跑單一遊戲。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>處理流程</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>1. 讀取影片</strong>
+          逐支讀取 input videos，依取樣間隔擷取候選影格。
+        </div>
+        <div class="step">
+          <strong>2. Auto ROI</strong>
+          自動偵測遊戲畫面區域，避免瀏覽器外框與背景干擾。
+        </div>
+        <div class="step">
+          <strong>3. 前處理過濾</strong>
+          排除模糊、過曝、低差異、噪聲與畫面重複度太高的截圖。
+        </div>
+        <div class="step">
+          <strong>4. OCR + 視覺判斷</strong>
+          讀取畫面文字，搭配 OpenCV UI 特徵分數進行分類。
+        </div>        <div class="step">
+          <strong>5. 代表圖挑選</strong>
+          透過分數、分群與品質規則，輸出最適合調研的代表圖。
+        </div>
+        <div class="step">
+          <strong>6. Symbol 裁切</strong>
+          從 Help / Paytable 圖自動找 symbol，輸出 symbol PNG、HTML 與 contact sheet。
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>整合 symbol 裁切後的用途</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>遊戲流程研究</h3>
+          <p>分類後的 Basegame、Feature game、Transition、Result、BigWin 等代表圖，可用來快速理解一款 slot 的主要流程與視覺節奏。</p>
+        </div>
+        <div class="card">
+          <h3>Help / 規則整理</h3>
+          <p>Help 圖會保留規則與 paytable 內容，並透過視覺去重降低同一頁不同幀重複出現。</p>
+        </div>
+        <div class="card">
+          <h3>Symbol 素材資料庫</h3>
+          <p>Paytable 中的 symbol 會被裁切成獨立 PNG，集中到 <code>symbol_table/symbols</code>，方便後續命名、分級、比較與素材盤點。</p>
+        </div>
+        <div class="card">
+          <h3>競品報告與 Figma 看板</h3>
+          <p>分類截圖與 symbol 圖可共同作為競品報告素材，減少人工逐幀截圖、整理與搬圖的時間。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>主要技術</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>技術</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>OpenCV</td>
+            <td>影片讀取、畫面裁切、動態偵測、亮度/飽和度/邊緣分析、圓形按鈕偵測、底部 UI 顏色與結構判斷。</td>
+          </tr>
+          <tr>
+            <td>PaddleOCR</td>
+            <td>辨識畫面上的遊戲文字，例如 Free Game、Total Win、Big Win、Feature Buy、Paytable、Loading 與廠商授權資訊。</td>
+          </tr>
+          <tr>
+            <td>規則式分類</td>
+            <td>把 OCR 關鍵字、文字位置、UI 分數、畫面品質分數整合成分類分數，處理不同廠家畫面差異。</td>
+          </tr>
+          <tr>
+            <td>影像品質評分</td>
+            <td>偵測爆光、模糊、半透明文字疊影、大色塊缺少細節與盤面遮擋，避免髒圖進入最終資料夾。</td>
+          </tr>
+          <tr>
+            <td>視覺分群</td>
+            <td>在 Basegame、Feature game、Big Win 等類別中用影像特徵做群聚，挑出有代表性的不同狀態。</td>
+          </tr>
+          <tr>
+            <td>Help 視覺去重</td>
+            <td>使用縮圖差異與色彩直方圖相似度判斷 Help 畫面是否重複，降低同頁不同幀重複保留。</td>
+          </tr>
+          <tr>
+            <td>Symbol 裁切</td>
+            <td>分類完成後接續呼叫 <code>generate_symbol_table.py</code>，從 Paytable 頁偵測 symbol component，輸出獨立 PNG 與 contact sheet。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>分類類別</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>類別</th>
+            <th>判斷重點</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>loading</code></td>
+            <td>遊戲封面、遊戲 logo、廠家名稱、授權/認證/版權文字、進度條、GET STARTED 等載入頁特徵。</td>
+          </tr>
+          <tr>
+            <td><code>Basegame</code></td>
+            <td>明確底部遊戲 UI，尤其是 spin 按鈕、auto、turbo、加減注、金額欄位與控制按鈕組合。新版已收緊，避免把非主流小遊戲或單純 WIN 畫面誤判成 Basegame。</td>
+          </tr>
+          <tr>
+            <td><code>Feature game</code></td>
+            <td>Running 狀態優先，例如 Remaining Free Spins、Free Game 10/10、Last Free Spin 等；同時保留廠家特例：base/free UI 相近時，會用底部 UI 與 free game 計數再判斷。</td>
+          </tr>
+          <tr>
+            <td><code>Transition</code></td>
+            <td>Free Spins 開始頁、Start/Continue/Confirm 等轉場畫面。若畫面其實是封面 loading、Help 規則頁或 Feature Buy 彈窗，會被優先改分到對應類別。</td>
+          </tr>
+          <tr>
+            <td><code>Result</code></td>
+            <td>Total Win、Collect、You've won 等結算畫面，以及置中大型得分。</td>
+          </tr>
+          <tr>
+            <td><code>BigWin</code></td>
+            <td>Big Win、Mega Win、Super Mega Win、Super Win、Jumbo Win 等多階大獎字樣與大型分數。最後取樣會盡量保留不同階段的大獎代表圖。</td>
+          </tr>
+          <tr>
+            <td><code>Feature Buy</code></td>
+            <td>大型購買功能彈窗，通常含 Feature Buy / Buy Feature、Cost、Bet、Quantity、Start、Cancel、Buy 等文字。一般 Basegame 中固定的 buy feature 小按鈕不會直接算 Feature Buy。</td>
+          </tr>
+          <tr>
+            <td><code>Help</code></td>
+            <td>規則說明、Paytable、Symbol Payout Values、Game Feature、Jackpot、Paylines 等大量文字頁。網頁式 Help 會盡量使用整頁裁切，保留完整規則內容；Paytable 類 Help 也是後續 symbol 裁切的主要來源。</td>
+          </tr>
+          <tr>
+            <td><code>Other</code></td>
+            <td>品牌 logo 全頁、非主流小遊戲、阻擋彈窗、無法穩定歸類或不適合調研的畫面。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Auto ROI 裁切</h2>
+      <p>
+        Auto ROI 會用畫面動態區域、比例、瀏覽器頂部裁切與特殊網頁 Help 偵測來推估真正的遊戲區域。對直式手機遊戲、橫式遊戲、網頁切版 Help 頁都有對應保護。
+      </p>
+      <ul>
+        <li>直式遊戲：避免把左右背景一起裁進去，讓 OCR 更集中在遊戲畫面。</li>
+        <li>橫式遊戲：避免因背景動態太大導致 ROI 過寬。</li>
+        <li>網頁 Help：若偵測到大範圍規則頁，會改用完整網頁內容裁切，而不是只裁遊戲 iframe。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>品質過濾與代表圖挑選</h2>
+      <p>
+        分類後並不會直接把所有圖片放進最終資料夾。工具會再依照該類別的特性挑選較乾淨的圖片，並把不確定或品質較差的圖片放進 <code>low_score</code>。
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>會被降低優先度的圖</h3>
+          <ul>
+            <li>動態模糊明顯</li>
+            <li>大範圍爆光且缺少細節</li>
+            <li>盤面被角色、彈窗或特效遮住</li>
+            <li>半透明文字或轉場殘影太多</li>
+            <li>與其他圖片重複度太高</li>
+            <li>Help 頁若只是相同畫面的不同幀，會降低保留優先度</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>會被提高優先度的圖</h3>
+          <ul>
+            <li>盤面完整清楚</li>
+            <li>UI 狀態明確</li>
+            <li>OCR 可讀性高</li>
+            <li>能代表該類別核心狀態</li>
+            <li>Big Win 可代表不同大獎階段</li>
+            <li>Help / Paytable 頁能提供 symbol 裁切來源</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>目前模組架構</h2>
+      <p>
+        主程式仍保留 <code>main.py</code> 作為入口，但已開始拆分模組，降低後續維護成本。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>檔案</th>
+            <th>責任</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>main.py</code></td>
+            <td>分類邏輯、品質評分、代表圖挑選、整體流程控制；分類完成後可自動呼叫 symbol 裁切流程。</td>
+          </tr>
+          <tr>
+            <td><code>config.py</code></td>
+            <td>路徑、分類名稱、影片副檔名與 Auto ROI 相關常數。</td>
+          </tr>
+          <tr>
+            <td><code>video_io.py</code></td>
+            <td>影片列表、輸出資料夾、圖片讀寫、CSV 寫入等 I/O 工作。</td>
+          </tr>
+          <tr>
+            <td><code>ocr_utils.py</code></td>
+            <td>PaddleOCR 初始化、OCR 執行與結果解析。</td>
+          </tr>
+          <tr>
+            <td><code>auto_roi.py</code></td>
+            <td>遊戲畫面自動裁切、網頁 Help 全頁 ROI、橫式/直式裁切策略。</td>
+          </tr>
+          <tr>
+            <td><code>analysis_export.py</code></td>
+            <td>讀取分類結果，匯出玩法分析、流程摘要與 HTML/JSON/Markdown 研究資料。</td>
+          </tr>
+          <tr>
+            <td><code>generate_symbol_table.py</code></td>
+            <td>從分類後的 Help / Paytable 圖中偵測 paytable 頁與 symbol component，輸出 <code>symbol_table/symbols</code>、HTML 與 contact sheet。</td>
+          </tr>
+          <tr>
+            <td><code>run_classify_and_symbols.bat</code></td>
+            <td>提供非工程使用者可直接執行的入口：雙擊跑全部 input 影片，或用影片名稱指定單一遊戲。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>使用方式與輸出位置</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>主要執行方式</h3>
+          <ul>
+            <li><code>run_classify_and_symbols.bat</code>：處理 <code>project/input_videos/</code> 內全部影片。</li>
+            <li><code>run_classify_and_symbols.bat "Perfect Strike"</code>：只處理指定影片，名稱對應影片檔名 stem。</li>
+            <li><code>run_classify_and_symbols.bat --skip-symbols</code>：只輸出分類截圖，不產生 symbol 圖。</li>
+            <li><code>run_classify_and_symbols.bat --video-id "Perfect Strike" --symbol-debug</code>：指定影片並輸出 symbol debug 圖。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>主要輸出</h3>
+          <ul>
+            <li><code>project/output/&lt;video_id&gt;/&lt;分類&gt;/</code>：分類後的代表截圖。</li>
+            <li><code>classification_result.csv</code>：每張候選截圖的分類、OCR 與分數記錄。</li>
+            <li><code>symbol_table/symbols/</code>：最終 symbol PNG。</li>
+            <li><code>symbol_table/final_icons_contact_sheet.jpg</code>：symbol 圖總覽，方便人工快速檢查。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Figma / FigJam 整合方向</h2>
+      <p>
+        分類完成後，工具可產出 Figma 匯入用資料，讓每支影片保留代表性截圖並排成研究看板。整合 symbol 裁切後，symbol 圖也能作為獨立素材進入競品看板或後續報告。為了避免 MCP tool call limit，流程設計成「本地先生成 manifest 與素材清單，再由 Figma plugin 一次讀入」。
+      </p>
+      <ul>
+        <li>各影片保留 Basegame、Feature game、loading、Result、Transition、Help、Feature Buy 等代表圖。</li>
+        <li>Big Win 盡量保留多階大獎圖，例如 Big Win、Mega Win、Super Mega Win、Super Win、Jumbo Win。</li>
+        <li>Other 通常不進研究看板，除非人工後續需要。</li>
+        <li>Help 圖可提供 AI 或人工閱讀規則，作為玩法分析與競品拆解基礎。</li>
+        <li>Symbol 圖可獨立整理成 icon board，用於比較不同遊戲的高低階符號、特殊符號與美術風格。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>目前限制與後續方向</h2>
+      <div class="note">
+        <p>
+          這套分類目前以主流 iGaming slot 流程為基礎：<code>Basegame → Transition → Feature game → Result</code>。若遊戲的 Feature 是足球、卡牌、輪盤或其他小遊戲形式，可能不應硬歸到原本的 Feature game，而是先放入 <code>Other</code> 或後續新增子類別。
+        </p>
+      </div>
+      <ul>
+        <li>持續拆分 <code>main.py</code>，把分類規則、品質分數、代表圖挑選與 symbol pipeline 入口各自模組化。</li>
+        <li>加強不同廠家的 UI 特徵，例如 FC、PG、Omniplay、YB 網頁 Help 等。</li>
+        <li>持續優化 Help 選圖，降低滾動式 Help 中同頁不同幀重複保留，同時避免 Paytable 頁漏掉。</li>
+        <li>針對 symbol 旁有 payout 數字的版面，進一步做「去數字但保留完整 symbol」裁切。</li>
+        <li>改善 Big Win 多階段取樣，從 OCR 直接區分 Big/Mega/Super/Jumbo 等大獎層級。</li>
+        <li>讓 Figma 匯入流程更自動化，減少手動複製 plugin 資料的步驟，並支援分類截圖與 symbol 圖一起進入看板。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>給 coworker 的一句話版本</h2>
+      <p>
+        這是一個結合 OpenCV 與 OCR 的 slot 影片分類與 symbol 擷取工具：它會自動找到遊戲畫面、擷取關鍵影格、判斷遊戲流程狀態、過濾髒圖，並從 Help / Paytable 中裁出 symbol 圖，最後輸出可直接用於美術調研、競品報告與 Figma 看板整理的素材。
+      </p>
+      <p class="muted">更新日期：2026-05-15</p>
+    </section>
+  </main>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

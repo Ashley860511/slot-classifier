@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slot Classifier Python 環境安裝說明</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #5b6472;
+      --line: #d9dee8;
+      --accent: #2563eb;
+      --accent-soft: #eaf1ff;
+      --warn: #9a3412;
+      --warn-soft: #fff4e6;
+      --ok: #166534;
+      --ok-soft: #edf9f0;
+      --code-bg: #111827;
+      --code-text: #e5e7eb;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+      line-height: 1.65;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 20px 72px;
+    }
+    header {
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      line-height: 1.25;
+    }
+    h2 {
+      margin: 36px 0 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      font-size: 22px;
+    }
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 17px;
+    }
+    p, li { color: var(--muted); }
+    strong { color: var(--text); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 20px;
+      margin: 16px 0;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    }
+    .note {
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin: 14px 0;
+      background: var(--accent-soft);
+      border: 1px solid #c7d9ff;
+      color: #1e3a8a;
+    }
+    .warning {
+      background: var(--warn-soft);
+      border-color: #fed7aa;
+      color: var(--warn);
+    }
+    .success {
+      background: var(--ok-soft);
+      border-color: #bbf7d0;
+      color: var(--ok);
+    }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      background: #eef2f7;
+      color: #111827;
+      padding: 2px 5px;
+      border-radius: 5px;
+    }
+    pre {
+      margin: 12px 0;
+      padding: 14px 16px;
+      overflow-x: auto;
+      border-radius: 12px;
+      background: var(--code-bg);
+      color: var(--code-text);
+      line-height: 1.5;
+    }
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      background: #eef2f7;
+      color: var(--text);
+    }
+    tr:last-child td { border-bottom: 0; }
+    .toc a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .toc a:hover { text-decoration: underline; }
+    .path {
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Slot Classifier Python 環境安裝說明</h1>
+    <p>更新日期：2026-05-12</p>
+    <p>這份文件是給第一次接觸專案的人使用，目標是讓對方可以把影片放進資料夾，安裝 Python 環境，並成功執行 slot 遊戲影片截圖分類與 Symbol 裁切工具。</p>
+  </header>
+
+  <section class="card toc">
+    <strong>快速目錄</strong>
+    <ol>
+      <li><a href="#overview">專案資料夾結構</a></li>
+      <li><a href="#prepare">安裝前準備</a></li>
+      <li><a href="#install">建立 Python 環境</a></li>
+      <li><a href="#verify">確認環境是否正常</a></li>
+      <li><a href="#run">如何執行工具</a></li>
+      <li><a href="#troubleshooting">常見問題與注意事項</a></li>
+    </ol>
+  </section>
+
+  <h2 id="overview">1. 專案資料夾結構</h2>
+  <p>目前分享包的主要資料夾是：</p>
+  <pre><code>slot_classifier_figma_share_package
+├─ app
+│  ├─ main.py
+│  ├─ generate_symbol_table.py
+│  ├─ auto_roi.py
+│  ├─ video_io.py
+│  ├─ ocr_utils.py
+│  ├─ config.py
+│  ├─ analysis
+│  └─ symbol_table
+├─ project
+│  ├─ input_videos
+│  └─ output
+├─ figma_export
+├─ figma_tools
+├─ requirements.txt
+├─ setup_venv.ps1
+├─ check_environment.ps1
+├─ run_classifier.ps1
+└─ README.md</code></pre>
+
+  <table>
+    <thead>
+      <tr>
+        <th>位置</th>
+        <th>用途</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>app/main.py</code></td>
+        <td>主要分類程式：讀取影片、截圖、Auto ROI、OCR、分類 Basegame / Feature game / BigWin / Help 等資料夾。</td>
+      </tr>
+      <tr>
+        <td><code>app/generate_symbol_table.py</code></td>
+        <td>從 Help / Paytable 圖片中找出 symbol icon，並輸出裁切後的圖示候選。</td>
+      </tr>
+      <tr>
+        <td><code>project/input_videos</code></td>
+        <td>放入要分析的影片。建議使用 <code>.mp4</code>。</td>
+      </tr>
+      <tr>
+        <td><code>project/output</code></td>
+        <td>程式輸出的分類結果、debug 圖、CSV、報告與 symbol 裁切資料夾。</td>
+      </tr>
+      <tr>
+        <td><code>requirements.txt</code></td>
+        <td>Python 套件清單，目前包含 OpenCV、PaddleOCR、PaddlePaddle、NumPy。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="prepare">2. 安裝前準備</h2>
+  <h3>2.1 建議把專案放在短路徑</h3>
+  <p>這個專案會安裝 PaddleOCR / PaddlePaddle，套件內部檔案很多、路徑也可能很長。Windows 如果路徑太深，安裝時容易出現「找不到檔案」或「Windows Long Path」相關錯誤。</p>
+
+  <div class="note success">
+    <strong>建議路徑：</strong>
+    <br><code>D:\slot_classifier_figma_share_package</code>
+    <br><code>C:\slot_classifier_figma_share_package</code>
+  </div>
+
+  <div class="note warning">
+    <strong>避免太深的路徑：</strong>
+    <br><code>C:\Users\你的名字\Documents\很長的資料夾\很長的日期\很多層資料夾\slot_classifier_figma_share_package</code>
+    <br>路徑越深，安裝 PaddleOCR 時越容易失敗。
+  </div>
+
+  <h3>2.2 安裝 Python</h3>
+  <p>建議使用 <strong>Python 3.10</strong>。目前專案使用的 PaddleOCR / PaddlePaddle 版本與 Python 3.10 搭配較穩定。</p>
+  <ol>
+    <li>到 Python 官方網站下載 Python 3.10。</li>
+    <li>安裝時勾選 <strong>Add python.exe to PATH</strong>。</li>
+    <li>安裝完成後，打開 PowerShell，輸入下面指令確認版本。</li>
+  </ol>
+  <pre><code>python --version</code></pre>
+  <p>如果看到類似 <code>Python 3.10.x</code>，代表 Python 已安裝成功。</p>
+
+  <h2 id="install">3. 建立 Python 環境</h2>
+  <p>以下步驟都在 <strong>PowerShell</strong> 執行。請先進入專案根目錄，也就是有 <code>requirements.txt</code> 的那一層。</p>
+
+  <h3>3.1 切換到專案資料夾</h3>
+  <p>如果你把專案放在 <code>D:\slot_classifier_figma_share_package</code>，請輸入：</p>
+  <pre><code>cd D:\slot_classifier_figma_share_package</code></pre>
+
+  <p>如果你仍使用目前這份工作資料夾，路徑會像這樣：</p>
+  <pre><code>cd C:\Users\ashleyli\Documents\Codex\2026-04-30\files-mentioned-by-the-user-main\slot_classifier_figma_share_package</code></pre>
+
+  <div class="note warning">
+    對外分享時，建議請同事先把資料夾移到短路徑，例如 <code>D:\slot_classifier_figma_share_package</code>，再開始安裝。
+  </div>
+
+  <h3>3.2 建立專案專用環境</h3>
+  <p>請在專案根目錄執行：</p>
+  <pre><code>python -m venv .venv</code></pre>
+
+  <p>這會建立一個叫做 <code>.venv</code> 的資料夾。它是這個專案專用的 Python 環境，避免影響電腦上其他 Python 專案。</p>
+
+  <h3>3.3 安裝需要的套件</h3>
+  <p>先更新安裝工具：</p>
+  <pre><code>.\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel</code></pre>
+
+  <p>再安裝專案套件：</p>
+  <pre><code>.\.venv\Scripts\python.exe -m pip install -r requirements.txt</code></pre>
+
+  <p>目前 <code>requirements.txt</code> 內主要包含：</p>
+  <pre><code>numpy==1.26.4
+opencv-python==4.6.0.66
+paddlepaddle==2.6.2
+paddleocr==2.7.3</code></pre>
+
+  <div class="note">
+    這份安裝清單是 CPU 版本，不需要額外安裝顯卡或 CUDA。第一次安裝會下載較多套件，需要一些時間。
+  </div>
+
+  <h2 id="verify">4. 確認環境是否正常</h2>
+  <h3>4.1 使用檢查腳本</h3>
+  <p>專案根目錄有提供 <code>check_environment.ps1</code>，可以快速檢查常用套件是否能被載入：</p>
+  <pre><code>.\check_environment.ps1</code></pre>
+
+  <p>如果 PowerShell 不允許執行 <code>.ps1</code>，可以先改用下面的直接檢查指令：</p>
+  <pre><code>.\.venv\Scripts\python.exe -c "import numpy, cv2, paddle, paddleocr; print('Python environment OK')"</code></pre>
+
+  <p>看到 <code>Python environment OK</code> 就代表基本套件可以正常載入。</p>
+
+  <h3>4.2 如果 PowerShell 阻擋 ps1 檔</h3>
+  <p>有些電腦第一次執行 PowerShell 腳本會被系統阻擋。可使用以下指令允許目前使用者執行本機腳本：</p>
+  <pre><code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code></pre>
+  <p>輸入後若出現確認問題，輸入 <code>Y</code> 後按 Enter。</p>
+
+  <h2 id="run">5. 如何執行工具</h2>
+  <h3>5.1 影片分類工具 main.py</h3>
+  <ol>
+    <li>把影片放進 <code>project\input_videos</code>。</li>
+    <li>在專案根目錄執行分類程式。</li>
+  </ol>
+
+  <p>使用腳本：</p>
+  <pre><code>.\run_classifier.ps1</code></pre>
+
+  <p>或使用完整 Python 指令：</p>
+  <pre><code>.\.venv\Scripts\python.exe app\main.py</code></pre>
+
+  <p>完成後，到 <code>project\output</code> 查看輸出結果。</p>
+
+  <h3>5.2 Symbol 裁切工具 generate_symbol_table.py</h3>
+  <p>如果已經跑過 <code>main.py</code>，Help 圖片會在 <code>project\output\影片名稱或編號\Help</code> 相關資料夾內。接著可以執行 Symbol 裁切工具：</p>
+  <pre><code>.\.venv\Scripts\python.exe app\generate_symbol_table.py --video-id 8</code></pre>
+
+  <p><code>--video-id 8</code> 代表分析 <code>project\output\8</code> 這支影片的輸出資料。若影片資料夾叫做 <code>Wild Train</code> 或 <code>Caishen Wins</code>，可以改用對應名稱。</p>
+
+  <div class="note">
+    目前 <code>generate_symbol_table.py</code> 的目標是本地端產出 symbol icon 候選與最終裁切圖，不需要先串 Claude API。後續若要自動命名與整理報告，才需要再接 AI API。
+  </div>
+
+  <h2 id="troubleshooting">6. 常見問題與注意事項</h2>
+
+  <h3>6.1 PaddleOCR 安裝失敗，出現 Windows Long Path</h3>
+  <p>如果看到類似下面的錯誤：</p>
+  <pre><code>Could not install packages due to an OSError
+HINT: This error might have occurred since this system does not have Windows Long Path support enabled.</code></pre>
+
+  <p>優先建議：</p>
+  <ol>
+    <li>把整個專案移到短路徑，例如 <code>D:\slot_classifier_figma_share_package</code>。</li>
+    <li>刪除舊的 <code>.venv</code>。</li>
+    <li>重新建立環境並安裝套件。</li>
+  </ol>
+
+  <p>如果仍失敗，可以請電腦管理者開啟 Windows 長路徑支援。用系統管理員身分開 PowerShell，執行：</p>
+  <pre><code>New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force</code></pre>
+  <p>執行後建議重新開機或至少重新開啟 PowerShell。</p>
+
+  <h3>6.2 不建議直接複製別人的 .venv</h3>
+  <p>雖然直接複製環境資料夾看起來很快，但 Python 虛擬環境內常會記錄原本電腦的路徑。換到另一台電腦後容易出現套件找不到、執行檔失效等問題。</p>
+  <div class="note warning">
+    對外分享時，建議分享專案資料夾與 <code>requirements.txt</code>，讓對方在自己的電腦上重新建立 <code>.venv</code>。
+  </div>
+
+  <h3>6.3 安裝套件時網路失敗</h3>
+  <p>如果安裝時顯示連線錯誤，通常是公司網路、防火牆、VPN 或 Python 套件來源被擋。可以嘗試：</p>
+  <ol>
+    <li>換到較穩定的網路。</li>
+    <li>關閉或切換 VPN。</li>
+    <li>請 IT 協助允許 Python / pip 下載套件。</li>
+  </ol>
+
+  <h3>6.4 Python 版本不對</h3>
+  <p>如果使用 Python 3.12 或更高版本，PaddleOCR / PaddlePaddle 可能較容易遇到相容性問題。建議重新安裝 Python 3.10，並用 Python 3.10 建立 <code>.venv</code>。</p>
+
+  <h3>6.5 NumPy 版本不相容</h3>
+  <p>目前專案使用 <code>numpy==1.26.4</code>。這是為了避開部分 OpenCV / PaddleOCR 與 NumPy 2.x 的相容性問題。請不要自行升級到 NumPy 2.x。</p>
+
+  <h3>6.6 輸出結果在哪裡</h3>
+  <p>分類後的圖片會在：</p>
+  <pre><code>project\output</code></pre>
+  <p>常見分類資料夾包含：</p>
+  <ul>
+    <li><code>Basegame</code></li>
+    <li><code>Feature game</code></li>
+    <li><code>Feature Buy</code></li>
+    <li><code>BigWin</code></li>
+    <li><code>Transition</code></li>
+    <li><code>Result</code></li>
+    <li><code>Help</code></li>
+    <li><code>loading</code></li>
+    <li><code>Other</code></li>
+    <li><code>low_score</code>：低信心或備選結果，方便人工檢查。</li>
+  </ul>
+
+  <h2>7. 給分享對象的最短安裝流程</h2>
+  <p>如果只想給同事一份最簡短的操作，可以提供下面這段：</p>
+  <div class="card">
+    <ol>
+      <li>把資料夾放到短路徑，例如 <code>D:\slot_classifier_figma_share_package</code>。</li>
+      <li>安裝 Python 3.10，並勾選 <strong>Add python.exe to PATH</strong>。</li>
+      <li>打開 PowerShell，切到專案資料夾。</li>
+      <li>執行 <code>python -m venv .venv</code>。</li>
+      <li>執行 <code>.\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel</code>。</li>
+      <li>執行 <code>.\.venv\Scripts\python.exe -m pip install -r requirements.txt</code>。</li>
+      <li>把影片放入 <code>project\input_videos</code>。</li>
+      <li>執行 <code>.\.venv\Scripts\python.exe app\main.py</code>。</li>
+      <li>到 <code>project\output</code> 查看結果。</li>
+    </ol>
+  </div>
+
+  <div class="note success">
+    <strong>下一步可做：</strong>再新增 <code>.bat</code> 檔，把常用指令包成「雙擊執行」版本，例如一個執行 <code>main.py</code>，一個執行 <code>generate_symbol_table.py</code>。
+  </div>
+</main>
+</body>
+</html>
