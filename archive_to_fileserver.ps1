@@ -3,8 +3,8 @@
   Archive slot classifier outputs to the company AI survey fileserver.
 
 .DESCRIPTION
-  Copies one video's classifier output, reports, logs, Figma export package,
-  and original video into the company network drive using Robocopy.
+  Copies one video's classifier output, reports, logs, and original video into
+  the company network drive using Robocopy.
 
 .EXAMPLE
   .\archive_to_fileserver.ps1 -VideoId "10" -GameName "Goal Rush"
@@ -407,13 +407,11 @@ $SafeGameName = $GameName -replace '[\\/:*?"<>|]', '_'
 $TargetBase = Join-Path $TargetRoot $SafeGameName
 $TargetReport = Join-Path $TargetBase "01_report"
 $TargetImages = Join-Path $TargetBase "02_classified_images"
-$TargetFigma = Join-Path $TargetBase "03_figma"
-$TargetLogs = Join-Path $TargetBase "04_logs"
+$TargetLogs = Join-Path $TargetBase "03_logs"
 $TargetVideo = Join-Path $TargetBase "video"
 
 $SourceOutput = Join-Path $Root "project\output\$VideoId"
 $SourceInputVideos = Join-Path $Root "project\input_videos"
-$SourceFigma = Join-Path $Root "figma_export"
 
 if (-not (Test-Path -LiteralPath $SourceOutput)) {
     throw "找不到分類輸出資料夾：$SourceOutput"
@@ -425,7 +423,6 @@ if (-not (Test-Path -LiteralPath $TargetRoot)) {
 
 New-Item -ItemType Directory -Force -Path $TargetReport | Out-Null
 New-Item -ItemType Directory -Force -Path $TargetImages | Out-Null
-New-Item -ItemType Directory -Force -Path $TargetFigma | Out-Null
 New-Item -ItemType Directory -Force -Path $TargetLogs | Out-Null
 New-Item -ItemType Directory -Force -Path $TargetVideo | Out-Null
 
@@ -472,14 +469,6 @@ Copy-TopLevelFilesWithProgress `
     -Activity "複製紀錄檔案" `
     -Extensions @(".csv", ".json")
 
-if (Test-Path -LiteralPath $SourceFigma) {
-    Invoke-RobocopyWithProgress `
-        -Source $SourceFigma `
-        -Destination $TargetFigma `
-        -Activity "複製 Figma 匯出" `
-        -ExcludedDirectories @()
-}
-
 $CopiedVideos = Copy-OriginalVideosWithProgress `
     -InputVideoDir $SourceInputVideos `
     -Destination $TargetVideo `
@@ -496,7 +485,8 @@ $Manifest = [ordered]@{
     source_output = $SourceOutput
     source_input_videos = $SourceInputVideos
     copied_videos = $CopiedVideos
-    source_figma = $SourceFigma
+    figma_backup_enabled = $false
+    figma_note = "Figma export is intentionally not archived. Future Figma board generation should read from cloud database / hashtag search."
     target_path = $TargetBase
 }
 
