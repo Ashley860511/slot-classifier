@@ -41,7 +41,7 @@ function Test-IsExcludedPath {
     param(
         [Parameter(Mandatory=$true)] [string]$BasePath,
         [Parameter(Mandatory=$true)] [string]$FullPath,
-        [Parameter(Mandatory=$true)] [string[]]$ExcludedDirectories
+        [string[]]$ExcludedDirectories = @()
     )
     $relative = Get-RelativePathText -BasePath $BasePath -FullPath $FullPath
     $parts = $relative -split '[\\/]+'
@@ -134,6 +134,110 @@ function Copy-TopLevelFilesWithProgress {
     }
     Write-Progress -Activity $Activity -Completed
 }
+
+function Convert-HtmlAttributeValueForRegex {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Value
+    )
+    return [System.Text.RegularExpressions.Regex]::Escape($Value)
+}
+
+function Copy-ReportHtmlWithBundledAssets {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Source,
+        [Parameter(Mandatory=$true)] [string]$Destination,
+        [string]$AssetFolderName = "report_assets"
+    )
+
+    $htmlFiles = @(Get-ChildItem -LiteralPath $Source -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension.ToLowerInvariant() -eq ".html" })
+    if ($htmlFiles.Count -eq 0) {
+        return
+    }
+
+    $assetRoot = Join-Path $Destination $AssetFolderName
+    New-Item -ItemType Directory -Force -Path $assetRoot | Out-Null
+
+    $htmlTotal = [Math]::Max(1, $htmlFiles.Count)
+    $htmlIndex = 0
+
+    foreach ($html in $htmlFiles) {
+        $htmlIndex++
+        Write-Progress -Activity "整理 report HTML 與圖片資產" -Status $html.Name -PercentComplete ([int](($htmlIndex / $htmlTotal) * 100))
+
+        $htmlText = Get-Content -LiteralPath $html.FullName -Raw -Encoding UTF8
+        $matches = @([regex]::Matches($htmlText, '(?i)(?<attr>src|href)\s*=\s*(?<quote>["''])(?<ref>[^"'']+)(\k<quote>)'))
+        $assetIndex = 0
+        $assetMap = @{}
+
+        foreach ($match in $matches) {
+            $attr = $match.Groups["attr"].Value
+            $quote = $match.Groups["quote"].Value
+            $ref = $match.Groups["ref"].Value.Trim()
+            if (-not $ref) { continue }
+
+            if ($ref.StartsWith("#")) { continue }
+            if ($ref -match '^(?i)(data:|https?:|mailto:|javascript:)') { continue }
+
+            if ($ref -match '^(?i)file:.+\.html(#.+)?$') {
+                $anchor = ""
+                if ($ref -match '(#.+)$') {
+                    $anchor = $Matches[1]
+                }
+                $old = Convert-HtmlAttributeValueForRegex -Value $match.Value
+                $new = "$attr=$quote$anchor$quote"
+                $htmlText = [regex]::Replace($htmlText, $old, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $new }, 1)
+                continue
+            }
+
+            $cleanRef = ($ref -split '#')[0]
+            $cleanRef = ($cleanRef -split '\?')[0]
+            if (-not $cleanRef) { continue }
+
+            try {
+                $cleanRef = [System.Uri]::UnescapeDataString($cleanRef)
+            } catch {
+                # Keep original text when URL decoding fails.
+            }
+
+            $sourcePath = $null
+            if ($cleanRef -match '^(?i)file:') {
+                try {
+                    $sourcePath = ([System.Uri]$cleanRef).LocalPath
+                } catch {
+                    continue
+                }
+            } else {
+                $relativeRef = ($cleanRef -replace '/', '\').TrimStart('.', '\', '/')
+                if ([System.IO.Path]::IsPathRooted($relativeRef)) { continue }
+                if (($relativeRef -split '\\') -contains '..') { continue }
+                $sourcePath = Join-Path $Source $relativeRef
+            }
+
+            if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { continue }
+
+            $extension = [System.IO.Path]::GetExtension($sourcePath).ToLowerInvariant()
+            if (@(".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp") -notcontains $extension) { continue }
+
+            if (-not $assetMap.ContainsKey($sourcePath)) {
+                $assetIndex++
+                $safeName = "{0:D4}_{1}" -f $assetIndex, ([System.IO.Path]::GetFileName($sourcePath) -replace '[\\/:*?"<>|]', '_')
+                $targetPath = Join-Path $assetRoot $safeName
+                Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+                $assetMap[$sourcePath] = "$AssetFolderName/$safeName"
+            }
+
+            $newRef = $assetMap[$sourcePath]
+            $old = Convert-HtmlAttributeValueForRegex -Value $match.Value
+            $new = "$attr=$quote$newRef$quote"
+            $htmlText = [regex]::Replace($htmlText, $old, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $new }, 1)
+        }
+
+        Set-Content -LiteralPath (Join-Path $Destination $html.Name) -Value $htmlText -Encoding UTF8
+    }
+
+    Write-Progress -Activity "整理 report HTML 與圖片資產" -Completed
+}
+
 function Copy-ReportReferencedAssetsWithProgress {
     param(
         [Parameter(Mandatory=$true)] [string]$Source,
@@ -343,11 +447,16 @@ if (Test-Path -LiteralPath $SourceLowScore) {
         -ExcludedDirectories $LowScoreExcludeDirs
 }
 
+Copy-ReportHtmlWithBundledAssets `
+    -Source $SourceOutput `
+    -Destination $TargetReport `
+    -AssetFolderName "report_assets"
+
 Copy-TopLevelFilesWithProgress `
     -Source $SourceOutput `
     -Destination $TargetReport `
-    -Activity "複製報告檔案" `
-    -Extensions @(".html", ".md", ".txt")
+    -Activity "複製報告文字檔案" `
+    -Extensions @(".md", ".txt")
 
 Copy-ReportAssetsWithProgress `
     -Source $SourceOutput `
