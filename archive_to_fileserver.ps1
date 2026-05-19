@@ -497,4 +497,31 @@ Write-Host ""
 Write-Host "歸檔完成：" -ForegroundColor Green
 Write-Host $TargetBase
 
+# ── 更新搜尋庫 ─────────────────────────────────────────────────────────────
+$LibraryRoot = $TargetRoot   # index.html / build_index.ps1 放在 AI_survey/ 根目錄
 
+# 首次執行：把 index.html 與 build_index.ps1 部署到網路磁碟根目錄
+$LibraryFiles = @("index.html", "build_index.ps1")
+foreach ($f in $LibraryFiles) {
+    $localSrc = Join-Path $Root "library\$f"
+    $netDst   = Join-Path $LibraryRoot $f
+    if (-not (Test-Path -LiteralPath $netDst)) {
+        if (Test-Path -LiteralPath $localSrc) {
+            Copy-Item -LiteralPath $localSrc -Destination $netDst -Force
+            Write-Host "已部署：$f -> $netDst"
+        } else {
+            Write-Warning "找不到 library\$f，略過部署"
+        }
+    }
+}
+
+# 重建 games_data.js（自動更新搜尋庫）
+$buildScript = Join-Path $LibraryRoot "build_index.ps1"
+if (Test-Path -LiteralPath $buildScript) {
+    Write-Host ""
+    Write-Host "重建搜尋庫索引…" -ForegroundColor Cyan
+    & powershell -NonInteractive -ExecutionPolicy Bypass -File $buildScript
+    Write-Host "搜尋庫已更新：$LibraryRoot\index.html" -ForegroundColor Green
+} else {
+    Write-Warning "找不到 $buildScript，略過搜尋庫更新"
+}
