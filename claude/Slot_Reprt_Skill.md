@@ -23,6 +23,8 @@ description: >
 
 4. **完成後用 Write 工具寫檔**，路徑為遊戲資料夾內的 `report.html`
 
+5. **同步生成 `tags.json` 與 `assets.json`**（與 report.html 放在同一資料夾），格式見第七節
+
 ---
 
 ## 二、色彩主題對照表
@@ -544,6 +546,64 @@ document.addEventListener('DOMContentLoaded', makeReplaceable);
 JS 使用 `data-r-done="1"` 標記已綁定的元素，
 確保多次切換編輯模式不會重複掛載事件。
 **不要預先在 HTML 寫 `data-r-done`**（只讓 JS 設定）。
+
+---
+
+## 七、tags.json 與 assets.json 規格
+
+### tags.json — 遊戲標籤索引
+
+```json
+{
+  "game": "遊戲名稱",
+  "developer": "開發商",
+  "theme": ["中式", "財神", "古典"],
+  "mechanics": ["free-spins", "multiplier", "cascade"],
+  "reel_format": "6×5",
+  "payways": "3600 Ways",
+  "max_win": "5000×",
+  "special_symbols": ["Scatter", "Wild", "Bonus"],
+  "tags": ["#FreeSpins", "#Multiplier", "#PGSoft", "#WildWest"]
+}
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `game` | 遊戲完整名稱（與資料夾名稱一致） |
+| `developer` | 開發商（如 PG Soft、Omniplay） |
+| `theme` | 美術主題關鍵字（3–6 個） |
+| `mechanics` | 核心玩法關鍵字，英文小寫 kebab-case（如 `free-spins`、`respin`、`cluster-pays`、`tumble`、`expanding-wild`） |
+| `reel_format` | 捲軸格式（如 `5×4`、`6×5`、`3×3`） |
+| `payways` | 付線方式（如 `1024 Ways`、`Cluster Pays`、`5 Lines`） |
+| `max_win` | 最高倍率（如 `4000×`；不確定時填 `"unknown"`） |
+| `special_symbols` | 特殊符號名稱列表 |
+| `tags` | `#` 開頭的搜索標籤，方便前端過濾 |
+
+---
+
+### assets.json — 遊戲素材索引
+
+```json
+{
+  "game": "遊戲名稱",
+  "folder": "資料夾名稱",
+  "report": "report.html",
+  "cover": "loading/GAME_frame_000000.jpg",
+  "symbols": [
+    {"tier": "scatter", "name": "符號名稱", "file": "symbol_table/symbols/symbol_candidate_NNN_from_candidate_XXX_score_Y.YY.png"},
+    {"tier": "wild",    "name": "Wild",     "file": "symbol_table/symbols/symbol_candidate_NNN_from_candidate_XXX_score_Y.YY.png"},
+    {"tier": "m1",      "name": "主力符號1", "file": "symbol_table/symbols/symbol_candidate_NNN_from_candidate_XXX_score_Y.YY.png"}
+  ]
+}
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `game` | 遊戲完整名稱 |
+| `folder` | 遊戲資料夾名稱（相對於 output 根目錄） |
+| `report` | 報告 HTML 檔名（固定為 `report.html`） |
+| `cover` | 封面截圖路徑（相對於遊戲資料夾） |
+| `symbols` | 符號列表；`tier` 值：`scatter`、`wild`、`bonus`、`m1`–`m6`、`l1`–`l3`（低值）；`file` 為相對路徑 |
 
 ---
 
