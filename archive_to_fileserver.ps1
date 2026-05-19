@@ -3,14 +3,14 @@
   Archive slot classifier outputs to the company AI survey fileserver.
 
 .DESCRIPTION
-  Copies one video's classifier output, reports, logs, and Figma export package
-  into the company network drive using Robocopy.
+  Copies one video's classifier output, reports, logs, Figma export package,
+  and original video into the company network drive using Robocopy.
 
 .EXAMPLE
   .\archive_to_fileserver.ps1 -VideoId "10" -GameName "Goal Rush"
 
 .EXAMPLE
-  .\archive_to_fileserver.ps1 -VideoId "WildCoaster" -GameName "WildCoaster" -IncludeLowScore
+  .\archive_to_fileserver.ps1 -VideoId "WildCoaster" -GameName "WildCoaster"
 #>
 param(
     [Parameter(Mandatory=$true)]
@@ -18,8 +18,6 @@ param(
 
     [Parameter(Mandatory=$true)]
     [string]$GameName,
-
-    [switch]$IncludeLowScore,
 
     [string]$TargetRoot = "\\192.168.123.5\jl商用遊戲機事務處\JLRD01研發一部\JLRD03美術設計課\IGaming\0_Common\AI_survey"
 )
@@ -136,6 +134,123 @@ function Copy-TopLevelFilesWithProgress {
     }
     Write-Progress -Activity $Activity -Completed
 }
+function Copy-ReportReferencedAssetsWithProgress {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Source,
+        [Parameter(Mandatory=$true)] [string]$Destination
+    )
+
+    $htmlFiles = @(Get-ChildItem -LiteralPath $Source -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension.ToLowerInvariant() -eq ".html" })
+    $references = New-Object System.Collections.Generic.HashSet[string]
+
+    foreach ($html in $htmlFiles) {
+        $htmlText = Get-Content -LiteralPath $html.FullName -Raw
+        $matches = [regex]::Matches($htmlText, '(?i)(?:src|href)\s*=\s*["'']([^"'']+)["'']')
+        foreach ($match in $matches) {
+            $ref = $match.Groups[1].Value.Trim()
+            if (-not $ref) { continue }
+            if ($ref.StartsWith('#')) { continue }
+            if ($ref -match '^(?i)(data:|https?:|mailto:|javascript:)') { continue }
+            if ($ref -match '^(?i)file:') { continue }
+
+            $cleanRef = ($ref -split '#')[0]
+            $cleanRef = ($cleanRef -split '\?')[0]
+            if (-not $cleanRef) { continue }
+
+            try {
+                $cleanRef = [System.Uri]::UnescapeDataString($cleanRef)
+            } catch {
+                # Keep original text when URL decoding fails.
+            }
+
+            $cleanRef = $cleanRef -replace '/', '\'
+            if ([System.IO.Path]::IsPathRooted($cleanRef)) { continue }
+            if (($cleanRef -split '\\') -contains '..') { continue }
+            [void]$references.Add($cleanRef)
+        }
+    }
+
+    $refs = @($references | Sort-Object)
+    $total = [Math]::Max(1, $refs.Count)
+    $index = 0
+
+    foreach ($ref in $refs) {
+        $index++
+        $percent = [int](($index / $total) * 100)
+        Write-Progress -Activity "複製 HTML 引用圖片" -Status $ref -PercentComplete $percent
+
+        $sourcePath = Join-Path $Source $ref
+        if (-not (Test-Path -LiteralPath $sourcePath)) { continue }
+
+        $targetPath = Join-Path $Destination $ref
+        $targetParent = Split-Path -Parent $targetPath
+        if ($targetParent) {
+            New-Item -ItemType Directory -Force -Path $targetParent | Out-Null
+        }
+
+        if (Test-Path -LiteralPath $sourcePath -PathType Container) {
+            Invoke-RobocopyWithProgress `
+                -Source $sourcePath `
+                -Destination $targetPath `
+                -Activity "複製 HTML 引用資料夾：$ref" `
+                -ExcludedDirectories @()
+        } else {
+            Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+        }
+    }
+
+    Write-Progress -Activity "複製 HTML 引用圖片" -Completed
+}
+
+function Copy-OriginalVideosWithProgress {
+    param(
+        [Parameter(Mandatory=$true)] [string]$InputVideoDir,
+        [Parameter(Mandatory=$true)] [string]$Destination,
+        [Parameter(Mandatory=$true)] [string]$VideoId,
+        [Parameter(Mandatory=$true)] [string]$GameName
+    )
+
+    if (-not (Test-Path -LiteralPath $InputVideoDir)) {
+        Write-Warning "找不到原始影片資料夾：$InputVideoDir"
+        return @()
+    }
+
+    $videoExtensions = @(".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v")
+    $allVideos = @(Get-ChildItem -LiteralPath $InputVideoDir -File -ErrorAction SilentlyContinue |
+        Where-Object { $videoExtensions -contains $_.Extension.ToLowerInvariant() })
+
+    $videos = @($allVideos | Where-Object {
+        $_.BaseName -ieq $VideoId -or $_.BaseName -ieq $GameName
+    })
+
+    if ($videos.Count -eq 0) {
+        $safeGameName = $GameName -replace '[\\/:*?"<>|]', '_'
+        $videos = @($allVideos | Where-Object {
+            $_.BaseName -ieq $safeGameName
+        })
+    }
+
+    if ($videos.Count -eq 0) {
+        Write-Warning "找不到對應的原始影片：VideoId=$VideoId, GameName=$GameName"
+        return @()
+    }
+
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    $total = [Math]::Max(1, $videos.Count)
+    $index = 0
+    $copied = @()
+
+    foreach ($video in $videos) {
+        $index++
+        $percent = [int](($index / $total) * 100)
+        Write-Progress -Activity "複製原始影片" -Status $video.Name -PercentComplete $percent
+        Copy-Item -LiteralPath $video.FullName -Destination $Destination -Force
+        $copied += $video.FullName
+    }
+
+    Write-Progress -Activity "複製原始影片" -Completed
+    return $copied
+}
 
 function Copy-ReportAssetsWithProgress {
     param(
@@ -190,8 +305,10 @@ $TargetReport = Join-Path $TargetBase "01_report"
 $TargetImages = Join-Path $TargetBase "02_classified_images"
 $TargetFigma = Join-Path $TargetBase "03_figma"
 $TargetLogs = Join-Path $TargetBase "04_logs"
+$TargetVideo = Join-Path $TargetBase "video"
 
 $SourceOutput = Join-Path $Root "project\output\$VideoId"
+$SourceInputVideos = Join-Path $Root "project\input_videos"
 $SourceFigma = Join-Path $Root "figma_export"
 
 if (-not (Test-Path -LiteralPath $SourceOutput)) {
@@ -206,17 +323,25 @@ New-Item -ItemType Directory -Force -Path $TargetReport | Out-Null
 New-Item -ItemType Directory -Force -Path $TargetImages | Out-Null
 New-Item -ItemType Directory -Force -Path $TargetFigma | Out-Null
 New-Item -ItemType Directory -Force -Path $TargetLogs | Out-Null
+New-Item -ItemType Directory -Force -Path $TargetVideo | Out-Null
 
-$ExcludeDirs = @("_debug", "Other")
-if (-not $IncludeLowScore) {
-    $ExcludeDirs += "low_score"
-}
+$MainImageExcludeDirs = @("_debug", "Other", "low_score")
+$LowScoreExcludeDirs = @("_debug", "Help", "Other")
 
 Invoke-RobocopyWithProgress `
     -Source $SourceOutput `
     -Destination $TargetImages `
     -Activity "複製分類圖片" `
-    -ExcludedDirectories $ExcludeDirs
+    -ExcludedDirectories $MainImageExcludeDirs
+
+$SourceLowScore = Join-Path $SourceOutput "low_score"
+if (Test-Path -LiteralPath $SourceLowScore) {
+    Invoke-RobocopyWithProgress `
+        -Source $SourceLowScore `
+        -Destination (Join-Path $TargetImages "low_score") `
+        -Activity "複製 low_score 分類圖片" `
+        -ExcludedDirectories $LowScoreExcludeDirs
+}
 
 Copy-TopLevelFilesWithProgress `
     -Source $SourceOutput `
@@ -225,6 +350,10 @@ Copy-TopLevelFilesWithProgress `
     -Extensions @(".html", ".md", ".txt")
 
 Copy-ReportAssetsWithProgress `
+    -Source $SourceOutput `
+    -Destination $TargetReport
+
+Copy-ReportReferencedAssetsWithProgress `
     -Source $SourceOutput `
     -Destination $TargetReport
 
@@ -242,13 +371,22 @@ if (Test-Path -LiteralPath $SourceFigma) {
         -ExcludedDirectories @()
 }
 
+$CopiedVideos = Copy-OriginalVideosWithProgress `
+    -InputVideoDir $SourceInputVideos `
+    -Destination $TargetVideo `
+    -VideoId $VideoId `
+    -GameName $GameName
+
 $Manifest = [ordered]@{
     archived_at = (Get-Date).ToString("s")
     game_name = $GameName
     video_id = $VideoId
-    include_low_score = [bool]$IncludeLowScore
-    excluded_directories = $ExcludeDirs
+    low_score_included = $true
+    main_image_excluded_directories = $MainImageExcludeDirs
+    low_score_excluded_directories = $LowScoreExcludeDirs
     source_output = $SourceOutput
+    source_input_videos = $SourceInputVideos
+    copied_videos = $CopiedVideos
     source_figma = $SourceFigma
     target_path = $TargetBase
 }
@@ -259,4 +397,5 @@ $Manifest | ConvertTo-Json -Depth 4 |
 Write-Host ""
 Write-Host "歸檔完成：" -ForegroundColor Green
 Write-Host $TargetBase
+
 
