@@ -906,6 +906,77 @@ def get_feature_ui_score(img, ocr_items=None, roi_w=0, roi_h=0):
     return score, reasons
 
 
+def feature_reel_board_signal_score(img):
+    """Detect visible slot-board/reel geometry behind a free-spin counter."""
+    if img is None or img.size == 0:
+        return 0.0, []
+
+    h, w = img.shape[:2]
+    if h <= 0 or w <= 0:
+        return 0.0, []
+
+    # Focus on the playable board, avoiding browser bars and bottom controls.
+    roi = img[int(h * 0.12):int(h * 0.84), int(w * 0.18):int(w * 0.86)]
+    if roi.size == 0:
+        return 0.0, []
+
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    sat = hsv[:, :, 1]
+    val = hsv[:, :, 2]
+    edges = cv2.Canny(gray, 55, 145)
+
+    edge_ratio = float(np.mean(edges > 0))
+    texture = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    colour_ratio = float(np.mean((sat >= 42) & (val >= 55)))
+
+    lines = cv2.HoughLinesP(
+        edges,
+        1,
+        np.pi / 180.0,
+        threshold=max(28, roi.shape[1] // 18),
+        minLineLength=max(26, roi.shape[1] // 14),
+        maxLineGap=max(8, roi.shape[1] // 42),
+    )
+    vertical_lines = 0
+    horizontal_lines = 0
+    if lines is not None:
+        for line in lines[:, 0, :]:
+            x1, y1, x2, y2 = [int(v) for v in line]
+            dx = abs(x2 - x1)
+            dy = abs(y2 - y1)
+            length = (dx * dx + dy * dy) ** 0.5
+            if length < max(24, min(roi.shape[:2]) * 0.08):
+                continue
+            if dy >= dx * 1.8:
+                vertical_lines += 1
+            elif dx >= dy * 1.8:
+                horizontal_lines += 1
+
+    score = 0.0
+    reasons = []
+    if edge_ratio >= 0.050:
+        score += 1.2
+        reasons.append(f"board_edges:{edge_ratio:.3f}")
+    if texture >= 520.0:
+        score += 0.9
+        reasons.append(f"board_texture:{texture:.0f}")
+    if colour_ratio >= 0.30:
+        score += 0.7
+        reasons.append(f"board_colour:{colour_ratio:.2f}")
+    if vertical_lines >= 3:
+        score += 1.2
+        reasons.append(f"vertical_reel_lines:{vertical_lines}")
+    if horizontal_lines >= 2:
+        score += 0.8
+        reasons.append(f"horizontal_reel_lines:{horizontal_lines}")
+    if vertical_lines >= 3 and horizontal_lines >= 2:
+        score += 1.0
+        reasons.append("reel_grid_geometry")
+
+    return score, reasons
+
+
 def frame_diff_score(img1, img2):
     if img1 is None or img2 is None:
         return 0.0
@@ -2537,6 +2608,11 @@ def classify_frame(cropped, ocr_items, roi_w, roi_h):
     if feature_ui_reasons:
         matched_keywords.setdefault("Feature game", []).extend(feature_ui_reasons)
 
+    feature_board_score, feature_board_reasons = feature_reel_board_signal_score(cropped)
+    category_scores["FeatureBoard"] = round(feature_board_score, 2)
+    if feature_board_reasons:
+        matched_keywords.setdefault("Feature game", []).extend(feature_board_reasons)
+
     help_paytable_score = help_paytable_signal_score(ocr_items)
     if help_paytable_score > 0:
         category_scores["HelpPaytable"] = round(help_paytable_score, 2)
@@ -2602,6 +2678,10 @@ def classify_frame(cropped, ocr_items, roi_w, roi_h):
         "free spins", "free spin", "last free spin", "last free spins",
         "remaining free spin", "remaining free spins", "free spins won",
     ])
+    has_free_spin_counter_text = (
+        has_any(joined, ["free spins", "free spin", "freespins", "freespin"])
+        and bool(re.search(r"\b\d{1,3}\b", joined))
+    )
     has_transition_action_text = has_any(joined, [
         "skip", "press", "continue", "confirm", "next", "accept", "ignore",
         "press start", "tap to start", "click to start",
@@ -2783,6 +2863,24 @@ def classify_frame(cropped, ocr_items, roi_w, roi_h):
         category = "Feature game" if has_feature_ui else "Transition"
         top_score = max(top_score, category_scores.get(category, 0.0), feature_ui_score)
         matched_keywords.setdefault(category, []).append("free_game_text_not_basegame")
+
+    if (
+        category == "Transition"
+        and has_free_spin_counter_text
+        and feature_board_score >= 3.0
+        and not has_transition_cover_text
+        and not has_start_intro
+        and not has_feature_rule_intro
+        and not has_transition_action_text
+        and not has_real_result_layout
+        and not has_total_win_label
+    ):
+        category = "Feature game"
+        top_score = max(top_score, feature_board_score, feature_ui_score, 10.0)
+        category_scores["Feature game"] = max(category_scores.get("Feature game", 0.0), 10.0)
+        matched_keywords.setdefault("Feature game", []).append(
+            f"free_spin_counter_over_reel_board:{feature_board_score:.2f}"
+        )
 
     if category == "Basegame":
         if basegame_ui_score >= BASEGAME_UI_MIN_SCORE:
@@ -3780,6 +3878,33 @@ def has_record_strong_feature_counter(rec):
     ])
 
 
+def has_record_free_spin_counter_over_reel_board(rec):
+    joined = record_text_joined(rec)
+    if not (
+        has_any(joined, ["free spins", "free spin", "freespins", "freespin"])
+        and bool(re.search(r"\b\d{1,3}\b", joined))
+    ):
+        return False
+    if has_record_start_intro_text(rec) or has_record_result_text(rec):
+        return False
+    if has_any(joined, ["congratulations", "you have won", "you won", "press", "continue", "start"]):
+        return False
+
+    score = float((rec.get("category_scores") or {}).get("FeatureBoard", 0.0) or 0.0)
+    if score >= 3.0:
+        return True
+
+    path = rec.get("save_path") or ""
+    if not path or not os.path.exists(path):
+        return False
+    img = cv2.imread(path)
+    if img is None:
+        return False
+    score, _reasons = feature_reel_board_signal_score(img)
+    rec.setdefault("category_scores", {})["FeatureBoard"] = round(score, 2)
+    return score >= 3.0
+
+
 def has_record_start_intro_text(rec):
     joined = record_text_joined(rec)
     return has_any(joined, [
@@ -3963,7 +4088,10 @@ def refine_transition_feature_counter_records(saved_records):
     for rec in saved_records:
         if rec.get("category") != "Transition":
             continue
-        if not has_record_strong_feature_counter(rec):
+        if not (
+            has_record_strong_feature_counter(rec)
+            or has_record_free_spin_counter_over_reel_board(rec)
+        ):
             continue
         if has_record_start_intro_text(rec) or has_record_result_text(rec):
             continue

@@ -135,6 +135,125 @@ def _dedupe_boxes(boxes, iou_threshold=0.42, image=None):
     return sorted(kept, key=lambda b: (b[1], b[0]))
 
 
+def _merge_stacked_symbol_boxes(boxes, image_w, image_h):
+    """Merge vertically split symbol art, such as a bonus vessel plus its label."""
+    merged = []
+    for i, a in enumerate(boxes):
+        ax, ay, aw, ah = [int(v) for v in a]
+        if aw < image_w * 0.16 or ah < image_h * 0.055:
+            continue
+        for j, b in enumerate(boxes):
+            if i == j:
+                continue
+            bx, by, bw, bh = [int(v) for v in b]
+            if bw < image_w * 0.16 or bh < image_h * 0.045:
+                continue
+            top, bottom = (a, b) if ay <= by else (b, a)
+            tx, ty, tw, th = [int(v) for v in top]
+            bx, by, bw, bh = [int(v) for v in bottom]
+            vertical_gap = by - (ty + th)
+            if vertical_gap > max(10, int(min(th, bh) * 0.28)):
+                continue
+            overlap = max(0, min(tx + tw, bx + bw) - max(tx, bx))
+            if overlap / float(max(1, min(tw, bw))) < 0.58:
+                continue
+            ux1 = min(tx, bx)
+            uy1 = min(ty, by)
+            ux2 = max(tx + tw, bx + bw)
+            uy2 = max(ty + th, by + bh)
+            uw, uh = ux2 - ux1, uy2 - uy1
+            if uh > image_h * 0.34 or uw > image_w * 0.38:
+                continue
+            if uh < max(th, bh) * 1.10:
+                continue
+            merged.append((ux1, uy1, uw, uh))
+    return merged
+
+
+def _infer_portrait_paytable_card_boxes(boxes, image_w, image_h):
+    """Infer missing low-saturation card boxes in mobile portrait paytables."""
+    try:
+        import numpy as np
+    except ImportError:
+        return []
+
+    aspect = image_w / max(image_h, 1)
+    if not (420 <= image_w <= 700 and image_h >= 760 and aspect <= 0.85):
+        return []
+
+    card_boxes = [
+        tuple(int(v) for v in box)
+        for box in boxes
+        if is_portrait_paytable_card_box(box, image_w, image_h)
+    ]
+    if len(card_boxes) < 2:
+        return []
+
+    centers_x = sorted((x + w / 2.0) for x, _y, w, _h in card_boxes)
+    clustered = []
+    for cx in centers_x:
+        if not clustered or abs(cx - clustered[-1][-1]) > image_w * 0.10:
+            clustered.append([cx])
+        else:
+            clustered[-1].append(cx)
+    col_centers = [sum(group) / len(group) for group in clustered]
+    if len(col_centers) < 3:
+        # NEZHA-style tables have three symbol columns; infer the third from
+        # the observed spacing when one low-chroma card was missed.
+        spacings = [
+            col_centers[i + 1] - col_centers[i]
+            for i in range(len(col_centers) - 1)
+            if image_w * 0.12 <= col_centers[i + 1] - col_centers[i] <= image_w * 0.24
+        ]
+        step = float(np.median(spacings)) if spacings else image_w * 0.19
+        while len(col_centers) < 3:
+            left_candidate = col_centers[0] - step
+            right_candidate = col_centers[-1] + step
+            if left_candidate >= image_w * 0.22:
+                col_centers.insert(0, left_candidate)
+            elif right_candidate <= image_w * 0.86:
+                col_centers.append(right_candidate)
+            else:
+                break
+    col_centers = sorted(col_centers[:3])
+
+    rows = []
+    for box in card_boxes:
+        x, y, w, h = box
+        cy = y + h / 2.0
+        matched = None
+        for row in rows:
+            if abs(cy - row["cy"]) <= image_h * 0.045:
+                matched = row
+                break
+        if matched is None:
+            rows.append({"cy": cy, "boxes": [box]})
+        else:
+            matched["boxes"].append(box)
+            matched["cy"] = sum(b[1] + b[3] / 2.0 for b in matched["boxes"]) / len(matched["boxes"])
+
+    inferred = []
+    for row in rows:
+        row_boxes = row["boxes"]
+        if len(row_boxes) < 2:
+            continue
+        avg_w = int(round(sum(b[2] for b in row_boxes) / len(row_boxes)))
+        avg_h = int(round(sum(b[3] for b in row_boxes) / len(row_boxes)))
+        avg_cy = row["cy"]
+        existing_centers = [b[0] + b[2] / 2.0 for b in row_boxes]
+        for cx in col_centers:
+            if any(abs(cx - old_cx) <= avg_w * 0.42 for old_cx in existing_centers):
+                continue
+            x = int(round(cx - avg_w / 2.0))
+            y = int(round(avg_cy - avg_h / 2.0))
+            if x < image_w * 0.08 or x + avg_w > image_w * 0.94:
+                continue
+            if y < image_h * 0.14 or y + avg_h > image_h * 0.80:
+                continue
+            inferred.append((max(0, x), max(0, y), min(avg_w, image_w - x), min(avg_h, image_h - y)))
+    return inferred
+
+
 def detect_icon_components_in_dialog(dialog_img) -> list:
     """
     Layout-agnostic symbol detector.
@@ -554,6 +673,12 @@ def detect_icons_in_dialog(dialog_img) -> list:
         return boxes
 
     boxes = _dedupe_boxes(component_boxes + grid_boxes + pp_web_boxes, image=dialog_img)
+    stacked_boxes = _merge_stacked_symbol_boxes(boxes, dialog_img.width, dialog_img.height)
+    if stacked_boxes:
+        boxes = _dedupe_boxes(boxes + stacked_boxes, image=dialog_img)
+    inferred_card_boxes = _infer_portrait_paytable_card_boxes(boxes, dialog_img.width, dialog_img.height)
+    if inferred_card_boxes:
+        boxes = _dedupe_boxes(boxes + inferred_card_boxes, image=dialog_img)
 
     if pp_web_boxes:
         covered = []
@@ -1551,6 +1676,143 @@ def expand_icon_crop_box(box, source_w, source_h):
     if x2 <= x1 or y2 <= y1:
         return bx, by, min(source_w, bx + bw), min(source_h, by + bh)
     return x1, y1, x2, y2
+
+
+def is_portrait_paytable_card_box(box, source_w, source_h):
+    """Card-style paytables need tight source crops so payout tables stay out."""
+    bx, by, bw, bh = [int(v) for v in box]
+    aspect = source_w / max(source_h, 1)
+    if not (420 <= source_w <= 700 and source_h >= 760 and aspect <= 0.85):
+        return False
+    if not (source_h * 0.16 <= by <= source_h * 0.76):
+        return False
+    if not (source_w * 0.18 <= bw <= source_w * 0.34):
+        return False
+    if not (source_h * 0.075 <= bh <= source_h * 0.19):
+        return False
+    box_aspect = bw / max(bh, 1)
+    return 0.45 <= box_aspect <= 1.65
+
+
+def is_portrait_stacked_logo_box(box, source_w, source_h):
+    """Tall merged symbol logos in portrait dialogs, e.g. Bonus/Scatter badges."""
+    bx, by, bw, bh = [int(v) for v in box]
+    aspect = source_w / max(source_h, 1)
+    if not (420 <= source_w <= 700 and source_h >= 760 and aspect <= 0.85):
+        return False
+    if not (source_h * 0.15 <= by <= source_h * 0.72):
+        return False
+    if not (source_w * 0.16 <= bw <= source_w * 0.40):
+        return False
+    if not (source_h * 0.16 <= bh <= source_h * 0.36):
+        return False
+    return bh >= bw * 1.70
+
+
+def tight_paytable_card_crop_box(box, source_w, source_h):
+    bx, by, bw, bh = [int(v) for v in box]
+    pad_x = max(3, int(round(bw * 0.05)))
+    pad_y = max(3, int(round(bh * 0.05)))
+    return (
+        max(0, bx - pad_x),
+        max(0, by - pad_y),
+        min(source_w, bx + bw + pad_x),
+        min(source_h, by + bh + pad_y),
+    )
+
+
+def postprocess_portrait_paytable_card_crop(icon_img):
+    """Keep the central symbol card from mobile portrait paytable rows."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return tight_crop_content(icon_img, bg_threshold=28, margin=3)
+
+    arr = np.array(icon_img.convert("RGB"), dtype=np.uint8)
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    white_text = (bright > 150) & (chroma < 45)
+    mask = (bright > 28) & (chroma > 18) & ~white_text
+    mask = cv2.morphologyEx(mask.astype("uint8") * 255, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
+
+    n, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
+    comps = []
+    for idx in range(1, n):
+        x, y, w, h, area = [int(v) for v in stats[idx]]
+        if area < max(90, icon_img.width * icon_img.height * 0.018):
+            continue
+        cx, cy = centroids[idx]
+        if h < icon_img.height * 0.35 or w < icon_img.width * 0.18:
+            continue
+        # NEZHA-style rows sometimes include slivers of neighboring cards.
+        # Prefer the sizeable component nearest the crop center.
+        center_penalty = abs(cx - icon_img.width / 2.0) / max(icon_img.width, 1)
+        comps.append((area * (1.0 - min(center_penalty, 0.45)), x, y, w, h))
+
+    if not comps:
+        return tight_crop_content(icon_img, bg_threshold=28, margin=3)
+
+    _rank, x, y, w, h = max(comps, key=lambda item: item[0])
+    margin = max(3, int(round(min(w, h) * 0.04)))
+    x1 = max(0, x - margin)
+    y1 = max(0, y - margin)
+    x2 = min(icon_img.width, x + w + margin)
+    y2 = min(icon_img.height, y + h + margin)
+    if x2 - x1 < 42 or y2 - y1 < 42:
+        return tight_crop_content(icon_img, bg_threshold=28, margin=3)
+    return icon_img.crop((x1, y1, x2, y2))
+
+
+def postprocess_stacked_logo_crop(icon_img):
+    """Crop a tall merged logo around the main colourful artwork."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return postprocess_icon_crop(icon_img)
+
+    arr = np.array(icon_img.convert("RGB"), dtype=np.uint8)
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    white_text = (bright > 150) & (chroma < 45)
+    mask = (chroma > 35) & (bright > 45) & ~white_text
+    mask = cv2.morphologyEx(mask.astype("uint8") * 255, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8), iterations=2)
+    n, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
+    comps = []
+    for idx in range(1, n):
+        x, y, w, h, area = [int(v) for v in stats[idx]]
+        if area < max(70, icon_img.width * icon_img.height * 0.004):
+            continue
+        cx, cy = centroids[idx]
+        # Avoid browser/game UI fragments near the top/bottom edges.
+        if not (icon_img.width * 0.16 <= cx <= icon_img.width * 0.84):
+            continue
+        if not (icon_img.height * 0.20 <= cy <= icon_img.height * 0.84):
+            continue
+        comps.append((x, y, w, h, area))
+
+    if not comps:
+        return postprocess_icon_crop(icon_img)
+
+    largest = max(comps, key=lambda c: c[4])
+    keep = [largest]
+    lx, ly, lw, lh, la = largest
+    for comp in comps:
+        x, y, w, h, area = comp
+        overlap = max(0, min(lx + lw, x + w) - max(lx, x))
+        near_y = abs((y + h / 2.0) - (ly + lh / 2.0)) <= max(lh, h) * 0.85
+        if comp is not largest and area >= la * 0.12 and overlap / float(max(1, min(lw, w))) >= 0.25 and near_y:
+            keep.append(comp)
+
+    margin = max(6, int(min(icon_img.width, icon_img.height) * 0.04))
+    x1 = max(0, min(c[0] for c in keep) - margin)
+    y1 = max(0, min(c[1] for c in keep) - margin)
+    x2 = min(icon_img.width, max(c[0] + c[2] for c in keep) + margin)
+    y2 = min(icon_img.height, max(c[1] + c[3] for c in keep) + margin)
+    if x2 - x1 < 36 or y2 - y1 < 42:
+        return postprocess_icon_crop(icon_img)
+    return icon_img.crop((x1, y1, x2, y2))
 
 
 def use_legacy_full_page_crop(source_w, source_h) -> bool:
@@ -2660,6 +2922,14 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                     y1 = max(0, by - pad)
                     x2 = min(source.width, bx + bw + pad)
                     y2 = min(source.height, by + bh + pad)
+                elif is_portrait_paytable_card_box((bx, by, bw, bh), source.width, source.height):
+                    x1, y1, x2, y2 = tight_paytable_card_crop_box(
+                        (bx, by, bw, bh), source.width, source.height
+                    )
+                elif is_portrait_stacked_logo_box((bx, by, bw, bh), source.width, source.height):
+                    x1, y1, x2, y2 = expand_icon_crop_box(
+                        (bx, by, bw, bh), source.width, source.height
+                    )
                 elif use_full_page_crop:
                     x1, y1, x2, y2 = legacy_full_page_crop_box(
                         (bx, by, bw, bh), source.width, source.height
@@ -2669,6 +2939,7 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                         (bx, by, bw, bh), source.width, source.height
                     )
                 icon_img = source.crop((x1, y1, x2, y2))
+                source_crop_kind = "default"
                 prefer_dominant_cleanup = (
                     680 <= source.width <= 920
                     and 430 <= source.height <= 620
@@ -2678,10 +2949,19 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                 # Post-process: remove dark empty borders and adjacent payout
                 # text, while protecting multipart symbols from over-trimming.
                 if is_pp_scatter_paytable_box((bx, by, bw, bh)):
+                    source_crop_kind = "pp_scatter"
                     icon_img = tight_crop_content(icon_img, bg_threshold=24, margin=2)
                 elif is_pp_multiplier_paytable_box((bx, by, bw, bh)):
+                    source_crop_kind = "pp_multiplier"
                     icon_img = postprocess_pp_multiplier_crop(icon_img)
+                elif is_portrait_paytable_card_box((bx, by, bw, bh), source.width, source.height):
+                    source_crop_kind = "portrait_paytable_card"
+                    icon_img = postprocess_portrait_paytable_card_crop(icon_img)
+                elif is_portrait_stacked_logo_box((bx, by, bw, bh), source.width, source.height):
+                    source_crop_kind = "portrait_stacked_logo"
+                    icon_img = postprocess_stacked_logo_crop(icon_img)
                 elif use_full_page_crop:
+                    source_crop_kind = "legacy_full_page"
                     icon_img = postprocess_full_page_icon_crop(icon_img)
                 else:
                     icon_img = postprocess_icon_crop(
@@ -2694,8 +2974,18 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                 icon_img.info["source_box"] = [bx, by, bw, bh]
                 icon_img.info["source_crop_box"] = [x1, y1, x2 - x1, y2 - y1]
                 icon_img.info["source_size"] = [source.width, source.height]
+                icon_img.info["source_crop_kind"] = source_crop_kind
 
                 ok, reject_reason = validate_icon_candidate(icon_img)
+                if (
+                    not ok
+                    and source_crop_kind == "portrait_paytable_card"
+                    and reject_reason in {"text_block", "flat_symbol_fragment", "small_text_fragment"}
+                    and icon_img.width >= 58
+                    and icon_img.height >= 58
+                ):
+                    ok = True
+                    icon_img.info["structured_validation_override"] = reject_reason
                 if not ok:
                     if debug_dir:
                         icon_img.save(

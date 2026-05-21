@@ -316,6 +316,33 @@ def _reject_final_symbol_candidate(metrics: dict[str, Any]) -> tuple[bool, str]:
     return False, "ok"
 
 
+def _reject_portrait_fragment(rec: dict[str, Any]) -> tuple[bool, str]:
+    """Drop partial logo fragments from portrait help pages after crop scoring."""
+    crop_kind = str(rec.get("source_crop_kind") or "")
+    size = rec.get("source_size") or []
+    if not isinstance(size, (list, tuple)) or len(size) < 2:
+        return False, "ok"
+    source_w = int(size[0] or 0)
+    source_h = int(size[1] or 0)
+    if not (420 <= source_w <= 700 and source_h >= 760 and source_w / max(source_h, 1) <= 0.85):
+        return False, "ok"
+
+    metrics = rec.get("metrics") or {}
+    w = int(metrics.get("width", 0) or 0)
+    h = int(metrics.get("height", 0) or 0)
+    edge_touches = int(metrics.get("edge_touches", 0) or 0)
+    red_fill_ratio = float(metrics.get("red_fill_ratio", 0.0) or 0.0)
+    white_fill_ratio = float(metrics.get("white_fill_ratio", 0.0) or 0.0)
+
+    if crop_kind == "portrait_stacked_logo" and red_fill_ratio >= 0.10 and h < 95 and white_fill_ratio < 0.004:
+        return True, "final_portrait_logo_fragment"
+    if crop_kind == "legacy_full_page" and red_fill_ratio >= 0.05 and edge_touches >= 2:
+        return True, "final_portrait_legacy_fragment"
+    if crop_kind == "legacy_full_page" and edge_touches >= 4 and min(w, h) >= 60 and red_fill_ratio >= 0.035:
+        return True, "final_portrait_legacy_fragment"
+    return False, "ok"
+
+
 def _allow_primary_paytable_low_score(rec: dict[str, Any], final_reason: str) -> bool:
     """Keep slightly low-scored crops from primary Help pages when they look like real art."""
     if final_reason != "final_low_score":
@@ -373,6 +400,38 @@ def _allow_primary_paytable_edge_icon(info: dict[str, Any], metrics: dict[str, A
         and min(w, h) >= 50
         and content_ratio >= 0.24
         and coloured_fill_ratio >= 0.030
+    )
+
+
+def _allow_structured_paytable_crop(info: dict[str, Any], metrics: dict[str, Any], reason: str) -> bool:
+    """Allow tight card/logo crops extracted from validated paytable pages."""
+    if reason not in {
+        "final_low_score", "final_edge_clipped", "final_likely_clipped",
+        "final_full_rect_fragment", "final_too_small",
+    }:
+        return False
+    crop_kind = str(info.get("source_crop_kind") or "")
+    if crop_kind not in {"portrait_paytable_card", "portrait_stacked_logo"}:
+        return False
+    score = float(metrics.get("score", 0.0) or 0.0)
+    w = int(metrics.get("width", 0) or 0)
+    h = int(metrics.get("height", 0) or 0)
+    content_ratio = float(metrics.get("content_ratio", 0.0) or 0.0)
+    yellow_fill_ratio = float(metrics.get("yellow_fill_ratio", 0.0) or 0.0)
+    white_fill_ratio = float(metrics.get("white_fill_ratio", 0.0) or 0.0)
+    red_fill_ratio = float(metrics.get("red_fill_ratio", 0.0) or 0.0)
+    coloured_fill_ratio = yellow_fill_ratio + white_fill_ratio + red_fill_ratio
+    if crop_kind == "portrait_paytable_card":
+        return (
+            score >= 0.72
+            and min(w, h) >= 42
+            and content_ratio >= 0.38
+        )
+    return (
+        score >= 0.48
+        and min(w, h) >= 42
+        and content_ratio >= 0.12
+        and coloured_fill_ratio >= 0.018
     )
 
 
@@ -604,9 +663,45 @@ def _icons_visually_same(path_a: str, path_b: str) -> bool:
         arr_b = np.array(b, dtype=np.float32)
         rgb_diff = float(np.mean(np.abs(arr_a[:, :, :3] - arr_b[:, :, :3])) / 255.0)
         alpha_diff = float(np.mean(np.abs(arr_a[:, :, 3] - arr_b[:, :, 3])) / 255.0)
-        return rgb_diff <= 0.014 and alpha_diff <= 0.018
+        return rgb_diff <= 0.065 and alpha_diff <= 0.018
     except Exception:
         return False
+
+
+def _icon_rgb_alpha_diff(path_a: str, path_b: str, size: int = 96) -> tuple[float, float] | None:
+    try:
+        with Image.open(path_a) as img_a, Image.open(path_b) as img_b:
+            a = img_a.convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+            b = img_b.convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+        import numpy as np
+
+        arr_a = np.array(a, dtype=np.float32)
+        arr_b = np.array(b, dtype=np.float32)
+        rgb_diff = float(np.mean(np.abs(arr_a[:, :, :3] - arr_b[:, :, :3])) / 255.0)
+        alpha_diff = float(np.mean(np.abs(arr_a[:, :, 3] - arr_b[:, :, 3])) / 255.0)
+        return rgb_diff, alpha_diff
+    except Exception:
+        return None
+
+
+def _records_visually_same(rec_a: dict[str, Any], rec_b: dict[str, Any]) -> bool:
+    """
+    Compare two final candidates with crop-kind awareness.
+
+    Portrait/mobile paytables often render A/K/Q/9/10 on identical card
+    backgrounds.  A loose whole-crop comparison then collapses different
+    symbols into the same group.  Use a stricter threshold for those structured
+    card crops while keeping the regular fuzzy grouping for other providers.
+    """
+    kind_a = str(rec_a.get("source_crop_kind") or "")
+    kind_b = str(rec_b.get("source_crop_kind") or "")
+    if kind_a == "portrait_paytable_card" and kind_b == "portrait_paytable_card":
+        diffs = _icon_rgb_alpha_diff(rec_a["path"], rec_b["path"], size=96)
+        if diffs is None:
+            return False
+        rgb_diff, alpha_diff = diffs
+        return rgb_diff <= 0.014 and alpha_diff <= 0.018
+    return _icons_visually_same(rec_a["path"], rec_b["path"])
 
 
 def _save_icon(img, out_path: Path, max_side: int = 240) -> Path:
@@ -784,6 +879,7 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
             "source_box": img.info.get("source_box"),
             "source_crop_box": img.info.get("source_crop_box"),
             "source_size": img.info.get("source_size"),
+            "source_crop_kind": img.info.get("source_crop_kind"),
             "trusted_pp_paytable_crop": trusted_pp_crop,
             "metrics": metrics,
         })
@@ -807,12 +903,17 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
         if final_rejected and _allow_primary_paytable_edge_icon(rec, rec.get("metrics") or {}, final_reason):
             final_rejected = False
             final_reason = "ok_primary_paytable_edge_icon"
+        if final_rejected and _allow_structured_paytable_crop(rec, rec.get("metrics") or {}, final_reason):
+            final_rejected = False
+            final_reason = "ok_structured_paytable_crop"
         if not final_rejected:
             try:
                 with Image.open(rec["path"]) as rec_img:
                     bleed_rejected, bleed_reason = _reject_payout_text_bleed(rec_img)
                     if not bleed_rejected:
                         bleed_rejected, bleed_reason = _reject_full_page_text_fragment(rec, rec_img)
+                    if not bleed_rejected:
+                        bleed_rejected, bleed_reason = _reject_portrait_fragment(rec)
                 if bleed_rejected:
                     final_rejected = True
                     final_reason = bleed_reason
@@ -830,7 +931,7 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
         for group in groups:
             if (
                 _hamming(rec_hash, int(group["hash"], 16)) <= 8
-                and _icons_visually_same(rec["path"], group["best"]["path"])
+                and _records_visually_same(rec, group["best"])
             ):
                 matched = group
                 break
