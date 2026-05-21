@@ -65,8 +65,54 @@ def b64_encode_pil(img) -> str:
 
 
 
-def _dedupe_boxes(boxes, iou_threshold=0.42):
-    """Merge near-duplicate icon boxes while keeping the larger/cleaner one."""
+def _box_overlap_ratio(a, b):
+    ax1, ay1, aw, ah = a
+    bx1, by1, bw, bh = b
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+    inter = iw * ih
+    small = max(1, min(aw * ah, bw * bh))
+    return inter / small
+
+
+def _score_icon_box_for_art(dialog_img, box):
+    """Score likely artwork boxes without over-favouring tight fragments."""
+    try:
+        import numpy as np
+    except ImportError:
+        return 0.0
+
+    x, y, w, h = [int(v) for v in box]
+    if w <= 0 or h <= 0:
+        return 0.0
+    W, H = dialog_img.size
+    x = max(0, min(W - 1, x))
+    y = max(0, min(H - 1, y))
+    w = max(1, min(W - x, w))
+    h = max(1, min(H - y, h))
+
+    arr = np.array(dialog_img.convert("RGB"), dtype=np.float32)[y:y + h, x:x + w]
+    if arr.size == 0:
+        return 0.0
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    colorful = ((bright > 42) & (chroma > 38))
+    color_ratio = float(colorful.mean())
+    white_text = float(((bright > 135) & (chroma < 72)).mean())
+    yellow_text = float(((arr[:, :, 0] > 130) & (arr[:, :, 1] > 92) & (arr[:, :, 2] < 135)).mean())
+    aspect = w / max(h, 1)
+    aspect_score = max(0.0, 1.0 - abs(aspect - 1.0) / 2.2)
+    size_score = min(1.0, max(w, h) / 96.0)
+    complete_size_bonus = min(0.55, (w * h) / 18000.0)
+    text_penalty = white_text * 0.55 + yellow_text * 0.45
+    return color_ratio * 2.25 + aspect_score * 0.28 + size_score * 0.24 + complete_size_bonus - text_penalty
+
+
+def _dedupe_boxes(boxes, iou_threshold=0.42, image=None):
+    """Merge near-duplicate icon boxes while keeping complete artwork boxes."""
     def area(b):
         return max(0, b[2]) * max(0, b[3])
 
@@ -183,7 +229,7 @@ def detect_icon_components_in_dialog(dialog_img) -> list:
             bottom = min(H, y + h + pad_y)
             boxes.append((left, top, right - left, bottom - top))
 
-        boxes = _dedupe_boxes(boxes)
+        boxes = _dedupe_boxes(boxes, image=dialog_img)
         if boxes:
             print(f"    Component detector found {len(boxes)} icon candidates")
         return boxes
@@ -392,6 +438,90 @@ def detect_grid_icons_in_dialog(dialog_img) -> list:
         return []
 
 
+def detect_pp_web_paytable_boxes(dialog_img) -> list:
+    """Supplement fixed PP web paytable layouts after the modal has been cropped."""
+    try:
+        import numpy as np
+    except ImportError:
+        return []
+
+    W, H = dialog_img.size
+    aspect = W / max(H, 1)
+    if not (680 <= W <= 920 and 430 <= H <= 620 and 1.25 <= aspect <= 1.75):
+        return []
+
+    arr = np.array(dialog_img.convert("RGB"), dtype=np.float32)
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    dark_ratio = float(((bright < 95) & (chroma < 110)).mean())
+    if dark_ratio < 0.60:
+        return []
+
+    def sx(x):
+        return int(round(x * W / 776.0))
+
+    def sy(y):
+        return int(round(y * H / 522.0))
+
+    def color_content_ratio(box):
+        x, y, w, h = box
+        x = max(0, min(W - 1, sx(x)))
+        y = max(0, min(H - 1, sy(y)))
+        w = max(1, min(W - x, sx(w)))
+        h = max(1, min(H - y, sy(h)))
+        crop = arr[y:y + h, x:x + w]
+        if crop.size == 0:
+            return 0.0
+        cb = crop.mean(axis=2)
+        cc = crop.max(axis=2) - crop.min(axis=2)
+        return float(((cb > 45) & (cc > 38)).mean())
+
+    page1_top_probe = [(74, 86, 132, 84), (234, 86, 132, 84), (394, 86, 132, 84), (554, 86, 132, 84)]
+    # Page 1 has four small symbol artworks in the upper grid row; Page 2 has
+    # only explanatory text in the same area.  The icons are dark under the
+    # modal overlay, so the threshold must stay low.
+    is_page1 = sum(1 for box in page1_top_probe if color_content_ratio(box) >= 0.025) >= 3
+
+    boxes = []
+    page2_probe = [(90, 216, 140, 112), (250, 216, 140, 112), (404, 216, 130, 112), (532, 216, 160, 112)]
+    is_page2 = sum(1 for box in page2_probe if color_content_ratio(box) >= 0.060) >= 3
+
+    if is_page1:
+        # Page 1 layouts vary and the payout rows sit very close to artwork.
+        # Let the component detector own most symbols, but add the bottom
+        # Scatter logo because generic boxes often merge it with explanatory
+        # text and then the final filter correctly rejects that wide crop.
+        boxes.append((sx(260), sy(397), sx(100), sy(85)))
+    elif is_page2:
+        # Page 2: multiplier spheres include external golden wings.  Keep the
+        # full wing span instead of only the colourful orb component.
+        for x, w in [(72, 154), (232, 154), (390, 154), (544, 154)]:
+            boxes.append((sx(x), sy(216), sx(w), sy(112)))
+    else:
+        return []
+
+    clipped = []
+    for x, y, w, h in boxes:
+        x = max(0, min(W - 1, x))
+        y = max(0, min(H - 1, y))
+        w = max(1, min(W - x, w))
+        h = max(1, min(H - y, h))
+        clipped.append((x, y, w, h))
+    return clipped
+
+
+def is_pp_multiplier_paytable_box(box) -> bool:
+    """Return True for supplemental PP page-2 multiplier symbol boxes."""
+    _x, y, w, h = [int(v) for v in box]
+    return 148 <= w <= 166 and 100 <= h <= 126 and 208 <= y <= 228
+
+
+def is_pp_scatter_paytable_box(box) -> bool:
+    """Return True for supplemental PP page-1 Scatter logo boxes."""
+    x, y, w, h = [int(v) for v in box]
+    return 245 <= x <= 275 and 390 <= y <= 410 and 85 <= w <= 115 and 75 <= h <= 96
+
+
 
 def detect_icons_in_dialog(dialog_img) -> list:
     """
@@ -417,7 +547,29 @@ def detect_icons_in_dialog(dialog_img) -> list:
         # text / payout fragments.
         grid_boxes = detect_grid_icons_in_dialog(dialog_img)
 
-    boxes = _dedupe_boxes(component_boxes + grid_boxes)
+    pp_web_boxes = detect_pp_web_paytable_boxes(dialog_img)
+    if len(pp_web_boxes) >= 4 and all(is_pp_multiplier_paytable_box(b) for b in pp_web_boxes):
+        boxes = _dedupe_boxes(pp_web_boxes, image=dialog_img)
+        print(f"    Using {len(boxes)} PP multiplier icon candidates")
+        return boxes
+
+    boxes = _dedupe_boxes(component_boxes + grid_boxes + pp_web_boxes, image=dialog_img)
+
+    if pp_web_boxes:
+        covered = []
+        forced = []
+        for pp_box in pp_web_boxes:
+            if is_pp_scatter_paytable_box(pp_box):
+                forced.append(pp_box)
+                continue
+            if any(_box_overlap_ratio(pp_box, old) >= 0.58 for old in boxes):
+                continue
+            covered.append(pp_box)
+        if covered:
+            boxes = _dedupe_boxes(boxes + covered, image=dialog_img)
+        for forced_box in forced:
+            if forced_box not in boxes:
+                boxes.append(forced_box)
     if boxes:
         print(f"    Using {len(boxes)} icon candidates after merge")
     return boxes
@@ -724,6 +876,102 @@ def trim_right_text_components(img, margin=10):
     return img.crop((0, 0, cut, img.height))
 
 
+def trim_right_explanatory_text(img, margin=8):
+    """
+    Trim paragraph-style explanation text to the right of a framed symbol.
+
+    PP paytables can show a large Scatter/Wild logo on the left followed by
+    multi-line explanatory text.  The usual payout-column cleanup is tuned for
+    compact number stacks, so add a separate paragraph detector that only cuts
+    when the left side already contains strong colourful artwork.
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        return img
+
+    if img.width < 86 or img.height < 48 or img.width < img.height * 0.95:
+        return img
+
+    arr = np.array(img.convert("RGB"), dtype=np.float32)
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    text_like = (bright > 112) & (chroma < 70)
+    art_like = (bright > 45) & (chroma > 45)
+
+    left_art = float(art_like[:, :int(img.width * 0.48)].mean())
+    right_text = float(text_like[:, int(img.width * 0.46):].mean())
+    if left_art < 0.060 or right_text < 0.050:
+        return img
+
+    fg = ((bright > 55) & (chroma > 20)) | text_like | art_like
+    col = fg.mean(axis=0)
+    search_start = int(img.width * 0.34)
+    search_end = int(img.width * 0.72)
+    run = 0
+    best_cut = None
+    for x in range(search_start, search_end):
+        if col[x] <= 0.060:
+            run += 1
+            if run >= max(3, int(img.width * 0.035)):
+                best_cut = x - run + 1
+                break
+        else:
+            run = 0
+
+    if best_cut is None:
+        return img
+
+    cut = max(24, best_cut + margin)
+    if cut < img.width * 0.38 or cut > img.width * 0.88:
+        return img
+
+    cropped = img.crop((0, 0, cut, img.height))
+    if cropped.width < 40 or cropped.height < 40:
+        return img
+    return cropped
+
+
+def trim_left_text_components(img):
+    """Mirror the right-side text cleanup for scatter/payout text on the left."""
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
+
+    if np is not None and img.width >= 90 and img.height >= 50:
+        arr = np.array(img.convert("RGBA"), dtype=np.uint8)
+        rgb = arr[:, :, :3].astype(np.float32)
+        alpha = arr[:, :, 3] > 8
+        bright = rgb.mean(axis=2)
+        chroma = rgb.max(axis=2) - rgb.min(axis=2)
+        text_like = alpha & (
+            ((bright > 118) & (chroma < 62)) |
+            ((rgb[:, :, 0] > 120) & (rgb[:, :, 1] > 86) & (rgb[:, :, 2] < 145) & (chroma > 24))
+        )
+        art_like = alpha & (bright > 45) & (chroma > 42)
+        left_text = float(text_like[:, :int(img.width * 0.45)].mean())
+        right_art = float(art_like[:, int(img.width * 0.35):].mean())
+        if left_text >= 0.030 and right_art >= 0.070:
+            fg = alpha & ((bright > 58) | (chroma > 28))
+            col = fg.mean(axis=0)
+            for x in range(int(img.width * 0.22), int(img.width * 0.48)):
+                if col[x] <= 0.035 and col[max(0, x - 8):x].mean() > 0.025 and col[x + 1:min(img.width, x + 9)].mean() > 0.12:
+                    cut = min(img.width - 18, x + 3)
+                    return img.crop((cut, 0, img.width, img.height))
+
+    if Image is None or img.width < 54:
+        return img
+    mirrored = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    trimmed = trim_right_text_components(trim_right_payout_column(mirrored))
+    if trimmed.size == mirrored.size:
+        return img
+    restored = trimmed.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    if restored.width < img.width * 0.45 or restored.height < img.height * 0.80:
+        return img
+    return restored
+
+
 def normalize_icon_crop(img, margin=8):
     """
     Tighten an icon candidate around visible artwork.
@@ -858,7 +1106,7 @@ def validate_icon_candidate(img):
     aspect = w / max(h, 1)
     if aspect < 0.38 or aspect > 2.25:
         return False, "bad_aspect"
-    if w < 64 and h < 48 and aspect > 1.22:
+    if w < 58 and h < 44 and aspect > 1.22:
         return False, "flat_symbol_fragment"
 
     arr = np.array(img.convert("RGB"), dtype=np.float32)
@@ -1115,8 +1363,271 @@ def safe_main_artwork_crop(before, after):
     return before
 
 
-def postprocess_icon_crop(icon_img):
+def crop_to_dominant_color_artwork(img, margin=18):
+    """Crop around the dominant colourful artwork and drop nearby payout text."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return img
+
+    if img.width < 42 or img.height < 42:
+        return img
+
+    arr = np.array(img.convert("RGB"), dtype=np.uint8)
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    gold_art = (arr[:, :, 0] > 112) & (arr[:, :, 1] > 78) & (arr[:, :, 2] < 135)
+    mask = (((bright > 38) & (chroma > 48)) | ((bright > 58) & gold_art)).astype(np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
+
+    num, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
+    comps = []
+    min_area = max(16, int(img.width * img.height * 0.0025))
+    for i in range(1, num):
+        x, y, w, h, area = [int(v) for v in stats[i]]
+        if area < min_area or w < 5 or h < 5:
+            continue
+        if w > img.width * 0.92 and h < img.height * 0.28:
+            continue
+        comps.append((x, y, w, h, area, centroids[i]))
+
+    if not comps:
+        return img
+
+    main = max(comps, key=lambda c: c[4])
+    main_area = main[4]
+    mcx, mcy = main[5]
+    kept = []
+    for comp in comps:
+        x, y, w, h, area, centroid = comp
+        cx, cy = centroid
+        close = abs(cx - mcx) <= img.width * 0.48 and abs(cy - mcy) <= img.height * 0.44
+        if area >= main_area * 0.10 or close:
+            kept.append(comp)
+
+    if not kept:
+        return img
+
+    x1 = max(0, min(c[0] for c in kept) - margin)
+    y1 = max(0, min(c[1] for c in kept) - margin)
+    x2 = min(img.width, max(c[0] + c[2] for c in kept) + margin)
+    y2 = min(img.height, max(c[1] + c[3] for c in kept) + margin)
+
+    if (x2 - x1) < 24 or (y2 - y1) < 24:
+        return img
+    if (x2 - x1) * (y2 - y1) > img.width * img.height * 0.92:
+        return img
+    return img.crop((x1, y1, x2, y2))
+
+
+def trim_bottom_payout_text(img, margin=8):
+    """
+    Remove payout rows printed directly below a paytable symbol.
+
+    PP web paytables place compact stacks such as "12-30 $100" immediately under
+    the artwork.  Generic component crops can include both the symbol and that
+    stack, so trim the lower text band when the upper portion still contains
+    colourful art.
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        return img
+
+    if img.width < 42 or img.height < 52:
+        return img
+
+    arr = np.array(img.convert("RGB"), dtype=np.float32)
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    text_mask = ((bright > 118) & (chroma < 82)) | (
+        (arr[:, :, 0] > 125) & (arr[:, :, 1] > 88) &
+        (arr[:, :, 2] < 145) & (chroma > 22)
+    )
+    art_mask = (bright > 42) & (chroma > 38)
+
+    lower_start = int(img.height * 0.42)
+    lower_text = float(text_mask[lower_start:, :].mean())
+    upper_art = float(art_mask[:max(lower_start, 1), :].mean())
+    if lower_text < 0.030 or upper_art < 0.035:
+        return img
+
+    row_density = text_mask.mean(axis=1)
+    art_density = art_mask.mean(axis=1)
+
+    quiet_text_run = 0
+    for y in range(lower_start, img.height):
+        if row_density[y] >= 0.045 and art_density[y] <= 0.055:
+            quiet_text_run += 1
+            if quiet_text_run >= 2:
+                cut = y - quiet_text_run + 1 - margin
+                if img.height * 0.38 <= cut <= img.height * 0.84:
+                    return img.crop((0, 0, img.width, max(24, int(cut))))
+        else:
+            quiet_text_run = 0
+
+    threshold = max(0.070, float(row_density.mean() + row_density.std() * 0.55))
+    run = 0
+    min_run = max(2, int(img.height * 0.035))
+    for y in range(lower_start, img.height):
+        if row_density[y] >= threshold:
+            run += 1
+            if run >= min_run:
+                cut = y - run + 1 - margin
+                if img.height * 0.34 <= cut <= img.height * 0.78:
+                    cropped = img.crop((0, 0, img.width, max(24, int(cut))))
+                    return cropped
+        else:
+            run = 0
+
+    return img
+
+
+def expand_icon_crop_box(box, source_w, source_h):
+    """
+    Expand a detected artwork component into a source crop window.
+
+    Component detection is intentionally tight around colourful pixels.  For
+    paytables, that tight box is only a hint: crowns, rings, multiplier orbs,
+    framed scatters, and letters often need surrounding pixels to avoid clipped
+    edges.  Expand symmetrically from the component centre and let the later
+    cleanup steps remove payout text or dark background.
+    """
+    bx, by, bw, bh = [int(v) for v in box]
+
+    # Supplemental PP multiplier boxes are explicit symbol windows.  Keep a
+    # small source-pixel cushion so glow and wings are not lost, but do not grow
+    # into the explanatory text rows.
+    if is_pp_multiplier_paytable_box((bx, by, bw, bh)):
+        pad_x = max(6, int(round(bw * 0.08)))
+        pad_y = max(4, int(round(bh * 0.04)))
+        return (
+            max(0, bx - pad_x),
+            max(0, by - pad_y),
+            min(source_w, bx + bw + pad_x),
+            min(source_h, by + bh + pad_y),
+        )
+
+    cx = bx + bw / 2.0
+    cy = by + bh / 2.0
+
+    min_side = 74
+    target_w = max(float(min_side), bw * 1.55, bh * 1.85)
+    target_h = max(float(min_side), bh * 1.70, bw * 0.82)
+
+    # Flat icons such as crowns are most likely to look cut in half vertically.
+    if bw >= bh * 1.55:
+        target_h = max(target_h, bh * 2.15, bw * 0.72)
+
+    # Tall/slender icons need a little extra horizontal context for glow/frames.
+    if bh >= bw * 1.45:
+        target_w = max(target_w, bw * 2.05, bh * 0.92)
+
+    # Avoid swallowing a whole paytable row when a detector already returned a
+    # large framed symbol, but keep enough room for wide Wild/Scatter badges.
+    target_w = min(target_w, max(float(min(source_w, 260)), bw * 2.35))
+    target_h = min(target_h, max(float(min(source_h, 220)), bh * 2.35))
+
+    x1 = int(round(cx - target_w / 2.0))
+    y1 = int(round(cy - target_h / 2.0))
+    x2 = int(round(cx + target_w / 2.0))
+    y2 = int(round(cy + target_h / 2.0))
+
+    if x1 < 0:
+        x2 = min(source_w, x2 - x1)
+        x1 = 0
+    if y1 < 0:
+        y2 = min(source_h, y2 - y1)
+        y1 = 0
+    if x2 > source_w:
+        x1 = max(0, x1 - (x2 - source_w))
+        x2 = source_w
+    if y2 > source_h:
+        y1 = max(0, y1 - (y2 - source_h))
+        y2 = source_h
+
+    if x2 <= x1 or y2 <= y1:
+        return bx, by, min(source_w, bx + bw), min(source_h, by + bh)
+    return x1, y1, x2, y2
+
+
+def use_legacy_full_page_crop(source_w, source_h) -> bool:
+    """Full-page and portrait mobile help screens need the older light padding."""
+    aspect = source_w / max(source_h, 1)
+    wide_full_page = source_w >= 1000 and aspect >= 1.35
+    browser_panel_page = source_w >= 1000 and source_h >= 780
+    portrait_mobile_panel = 420 <= source_w <= 700 and source_h >= 760 and aspect <= 0.85
+    return wide_full_page or browser_panel_page or portrait_mobile_panel
+
+
+def legacy_full_page_crop_box(box, source_w, source_h):
+    """Old source-pixel crop strategy for full-page paytable/help layouts."""
+    bx, by, bw, bh = [int(v) for v in box]
+    pad = 10
+    if bw >= bh * 1.18:
+        # Full-page/PG-style detectors often return an entire symbol+payout row.
+        # The symbol artwork is normally on the left side of that row, so keep
+        # only that artwork window and let cleanup trim the remaining background.
+        crop_w = max(56, min(bw, int(round(bh * 1.80))))
+    else:
+        crop_w = max(bw + 12, int(bh * 1.15), 56)
+    x1 = max(0, bx - pad)
+    y1 = max(0, by - pad)
+    x2 = min(source_w, bx + crop_w + pad)
+    y2 = min(source_h, by + bh + pad)
+    if x2 <= x1 or y2 <= y1:
+        return bx, by, min(source_w, bx + bw), min(source_h, by + bh)
+    return x1, y1, x2, y2
+
+
+def postprocess_icon_crop(icon_img, prefer_dominant_color_cleanup=False):
     """Clean one icon crop while protecting wide / multipart symbols."""
+    icon_img = tight_crop_content(icon_img, bg_threshold=35)
+
+    candidate = trim_bottom_payout_text(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.30, score_tolerance=0.55)
+
+    candidate = trim_disconnected_right_noise(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.44)
+
+    candidate = trim_right_payout_column(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.50)
+
+    candidate = trim_right_text_components(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.48)
+
+    candidate = trim_right_explanatory_text(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.42, score_tolerance=0.60)
+
+    candidate = crop_to_main_artwork_component(icon_img, margin=12)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.32, score_tolerance=0.65)
+
+    if prefer_dominant_color_cleanup:
+        candidate = crop_to_dominant_color_artwork(icon_img, margin=18)
+        icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.30, score_tolerance=0.70)
+
+    candidate = normalize_icon_crop(icon_img, margin=22)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.62)
+
+    candidate = crop_to_main_artwork_component(icon_img, margin=12)
+    icon_img = safe_main_artwork_crop(icon_img, candidate)
+
+    candidate = trim_bottom_payout_text(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.30, score_tolerance=0.55)
+
+    candidate = trim_right_text_components(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.54)
+
+    candidate = trim_left_text_components(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.45)
+
+    return icon_img
+
+
+def postprocess_full_page_icon_crop(icon_img):
+    """Conservative legacy cleanup for full-page help/paytable layouts."""
     icon_img = tight_crop_content(icon_img, bg_threshold=35)
 
     candidate = trim_disconnected_right_noise(icon_img)
@@ -1127,6 +1638,9 @@ def postprocess_icon_crop(icon_img):
 
     candidate = trim_right_text_components(icon_img)
     icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.48)
+
+    candidate = trim_right_explanatory_text(icon_img)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.42, score_tolerance=0.60)
 
     candidate = crop_to_main_artwork_component(icon_img, margin=12)
     icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.32, score_tolerance=0.65)
@@ -1139,8 +1653,15 @@ def postprocess_icon_crop(icon_img):
 
     candidate = trim_right_text_components(icon_img)
     icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.54)
-
     return icon_img
+
+
+def postprocess_pp_multiplier_crop(icon_img):
+    """Keep PP multiplier orb wings intact; only trim empty dark border."""
+    icon_img = tight_crop_content(icon_img, bg_threshold=24, margin=4)
+    candidate = trim_disconnected_right_noise(icon_img, margin=4)
+    icon_img = safe_trim_icon_step(icon_img, candidate, min_area_ratio=0.62, score_tolerance=0.55)
+    return tight_crop_content(icon_img, bg_threshold=24, margin=2)
 
 
 def auto_crop_dialog(img_path: Path):
@@ -1172,6 +1693,104 @@ def auto_crop_dialog(img_path: Path):
         img    = Image.open(img_path)
         orig_w, orig_h = img.size
         gray   = np.array(img.convert("L"), dtype=np.float32)
+        rgb    = np.array(img.convert("RGB"), dtype=np.float32)
+
+        def find_web_help_modal():
+            """Crop wide PP web help overlays before generic dark-bg fallback."""
+            if orig_w < orig_h * 1.35:
+                return None
+
+            bright = gray
+            chroma = rgb.max(axis=2) - rgb.min(axis=2)
+            dark_panel = (bright < 72) & (chroma < 95)
+
+            y_scan1 = int(orig_h * 0.22)
+            y_scan2 = int(orig_h * 0.72)
+            if y_scan2 <= y_scan1:
+                return None
+
+            col_coverage = dark_panel[y_scan1:y_scan2, :].mean(axis=0)
+
+            def groups_from_mask(mask, min_len):
+                groups = []
+                start = None
+                for idx, value in enumerate(mask.tolist()):
+                    if value and start is None:
+                        start = idx
+                    elif not value and start is not None:
+                        if idx - start >= min_len:
+                            groups.append((start, idx - 1))
+                        start = None
+                if start is not None and len(mask) - start >= min_len:
+                    groups.append((start, len(mask) - 1))
+                return groups
+
+            col_groups = groups_from_mask(col_coverage > 0.35, max(40, int(orig_w * 0.06)))
+            center_x = orig_w / 2.0
+            modal_group = None
+            for start, end in col_groups:
+                width = end - start + 1
+                if width < orig_w * 0.25 or width > orig_w * 0.72:
+                    continue
+                if start <= center_x <= end or abs((start + end) / 2.0 - center_x) < orig_w * 0.16:
+                    modal_group = (start, end)
+                    break
+            if modal_group is None:
+                return None
+
+            mx1, mx2 = modal_group
+            row_coverage = dark_panel[:, mx1:mx2 + 1].mean(axis=1)
+            row_mask = row_coverage > 0.45
+            row_mask[:int(orig_h * 0.18)] = False
+            row_mask[int(orig_h * 0.76):] = False
+            row_groups = groups_from_mask(row_mask, max(24, int(orig_h * 0.035)))
+            if not row_groups:
+                return None
+
+            my1 = min(g[0] for g in row_groups)
+            my2 = max(g[1] for g in row_groups)
+            if (my2 - my1 + 1) < orig_h * 0.24:
+                return None
+
+            # PP web pages can show the game's left Buy/Bet rail beside the
+            # help dialog.  The rail is also dark, so the broad center scan can
+            # absorb it.  Refine the crop from the dialog title/header band,
+            # where the real modal forms one centered dark rectangle.
+            modal_h = my2 - my1 + 1
+            header_y1 = min(my2, my1 + max(16, int(modal_h * 0.10)))
+            header_y2 = min(my2 + 1, my1 + max(42, int(modal_h * 0.30)))
+            header_cov = dark_panel[header_y1:header_y2, :].mean(axis=0)
+            header_groups = groups_from_mask(header_cov > 0.45, max(40, int(orig_w * 0.05)))
+            refined = None
+            for start, end in header_groups:
+                width = end - start + 1
+                if width < orig_w * 0.25 or width > orig_w * 0.62:
+                    continue
+                if start <= center_x <= end or abs((start + end) / 2.0 - center_x) < orig_w * 0.16:
+                    refined = (start, end)
+                    break
+            if refined is not None:
+                mx1, mx2 = refined
+
+            pad_x = max(4, int(orig_w * 0.004))
+            pad_y = max(4, int(orig_h * 0.006))
+            crop_w = mx2 - mx1 + 1 + pad_x * 2
+            crop_h = my2 - my1 + 1 + pad_y * 2
+            if crop_w / max(crop_h, 1) < 1.15:
+                return None
+            return (
+                max(0, mx1 - pad_x),
+                max(0, my1 - pad_y),
+                min(orig_w, mx2 + 1 + pad_x),
+                min(orig_h, my2 + 1 + pad_y),
+            )
+
+        web_modal = find_web_help_modal()
+        if web_modal is not None:
+            x1, y1, x2, y2 = web_modal
+            cropped = img.crop((x1, y1, x2, y2)).copy()
+            img.close()
+            return cropped, x1, y1
 
         DARK    = 55    # brightness ceiling for dialog background pixels
         MIN_COV = 0.12  # minimum fraction of image that must be "dark"
@@ -1952,7 +2571,7 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
             paytable_scan_images,
             local_debug_dir,
             auto_crop_dialog=auto_crop_dialog,
-            detect_icon_components_in_dialog=detect_icon_components_in_dialog,
+            detect_icon_components_in_dialog=detect_icons_in_dialog,
             max_pages=72 if icons_only else 10,
         )
 
@@ -2028,27 +2647,53 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                 except Exception as _e:
                     print(f"    [debug] annotation failed: {_e}")
 
-            pad = 10
             page_icons = []
             for bi, (bx, by, bw, bh) in enumerate(boxes):
                 # Icons in paytable grids are often wider than a square cell
-                # (scatter/wild frames, lucky cat, sushi, etc.).  Start with a
-                # generous crop so the artwork is complete; component cleanup
-                # removes adjacent labels or payout numbers afterward.
-                crop_w = max(bw + 12, int(bh * 1.15), 56)
-                x1 = max(0, bx - pad)
-                y1 = max(0, by - pad)
-                x2 = min(source.width, bx + crop_w + pad)
-                y2 = min(source.height, by + bh + pad)
+                # (scatter/wild frames, crowns, multiplier orbs, etc.).  Treat
+                # the detected box as an artwork hint and expand around its
+                # centre before cleanup trims payout text or empty background.
+                use_full_page_crop = use_legacy_full_page_crop(source.width, source.height)
+                if is_pp_scatter_paytable_box((bx, by, bw, bh)):
+                    pad = 4
+                    x1 = max(0, bx - pad)
+                    y1 = max(0, by - pad)
+                    x2 = min(source.width, bx + bw + pad)
+                    y2 = min(source.height, by + bh + pad)
+                elif use_full_page_crop:
+                    x1, y1, x2, y2 = legacy_full_page_crop_box(
+                        (bx, by, bw, bh), source.width, source.height
+                    )
+                else:
+                    x1, y1, x2, y2 = expand_icon_crop_box(
+                        (bx, by, bw, bh), source.width, source.height
+                    )
                 icon_img = source.crop((x1, y1, x2, y2))
+                prefer_dominant_cleanup = (
+                    680 <= source.width <= 920
+                    and 430 <= source.height <= 620
+                    and 1.25 <= source.width / max(source.height, 1) <= 1.75
+                )
 
                 # Post-process: remove dark empty borders and adjacent payout
                 # text, while protecting multipart symbols from over-trimming.
-                icon_img = postprocess_icon_crop(icon_img)
+                if is_pp_scatter_paytable_box((bx, by, bw, bh)):
+                    icon_img = tight_crop_content(icon_img, bg_threshold=24, margin=2)
+                elif is_pp_multiplier_paytable_box((bx, by, bw, bh)):
+                    icon_img = postprocess_pp_multiplier_crop(icon_img)
+                elif use_full_page_crop:
+                    icon_img = postprocess_full_page_icon_crop(icon_img)
+                else:
+                    icon_img = postprocess_icon_crop(
+                        icon_img,
+                        prefer_dominant_color_cleanup=prefer_dominant_cleanup,
+                    )
                 icon_img.info["source_page_index"] = pi
                 icon_img.info["source_page_path"] = str(page_path)
                 icon_img.info["source_box_index"] = bi
                 icon_img.info["source_box"] = [bx, by, bw, bh]
+                icon_img.info["source_crop_box"] = [x1, y1, x2 - x1, y2 - y1]
+                icon_img.info["source_size"] = [source.width, source.height]
 
                 ok, reject_reason = validate_icon_candidate(icon_img)
                 if not ok:

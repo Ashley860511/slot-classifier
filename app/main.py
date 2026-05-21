@@ -105,6 +105,9 @@ TOP_K_LOADING = 6
 TOP_K_HELP = 160
 TOP_K_FEATURE_BUY = 6
 BIGWIN_EVENT_GAP_FRAMES = 600
+TRANSITION_EVENT_GAP_FRAMES = 600
+HELP_EVENT_GAP_FRAMES = 360
+HELP_MAX_FINAL_PAGES = 32
 HELP_DEDUP_JACCARD_THRESHOLD = 0.985
 HELP_MIN_QUALITY_SCORE = 8.0
 HELP_RULE_TEXT_MIN_QUALITY_SCORE = 2.5
@@ -152,6 +155,7 @@ CATEGORY_KEYWORDS = {
         "wait": 1,
     },
     "BigWin": {
+        "sensational": 8,
         "super mega win": 8,
         "super megawin": 8,
         "big win": 6,
@@ -181,6 +185,9 @@ CATEGORY_KEYWORDS = {
         "winner": 1,
     },
     "Transition": {
+        "congratulations": 8,
+        "congradulations": 8,
+        "you have won": 8,
         "start button": 12,
         "press start": 12,
         "tap to start": 12,
@@ -201,6 +208,8 @@ CATEGORY_KEYWORDS = {
         "remaining free spins": 18,
         "free spins remaining": 18,
         "remaining free spin": 18,
+        "free spins left": 18,
+        "free spin left": 18,
         "spin remaining": 14,
         "spins remaining": 14,
         "free spin mode": 10,
@@ -224,6 +233,10 @@ CATEGORY_KEYWORDS = {
         "bonus": 1,
     },
     "Feature Buy": {
+        "buy super free spins": 12,
+        "buy free spins": 12,
+        "buy super free spin": 12,
+        "buy free spin": 12,
         "feature buy": 10,
         "buy feature": 10,
         "super feature buy": 10,
@@ -299,6 +312,7 @@ TRANSITION_ACTION_PHRASES = [
 ]
 
 FEATURE_INTRO_PHRASES = [
+    "you have won", "free spins won",
     "feature activated", "features activated", "features are activated",
     "all features activated", "all features are activated",
     "bonus game", "bonus round", "free game", "free games",
@@ -316,7 +330,8 @@ FEATURE_RUNNING_PHRASES = [
     "remaining free spins", "free spins remaining", "remaining free spin",
     "spin remaining", "spins remaining", "free spin mode",
     "remaining free", "remains until end of free", "free spin remaining",
-    "free spins remain", "free spin remain", "retrigger", "respin",
+    "free spins remain", "free spin remain", "free spins left", "free spin left",
+    "retrigger", "respin",
 ]
 
 FEATURE_ACTIVE_TERMS = [
@@ -362,6 +377,7 @@ FEATURE_SUBTYPE_TERMS = {
 
 FEATURE_BUY_PHRASES = [
     "feature buy", "buy feature", "super feature buy", "buy bonus",
+    "buy free spins", "buy free spin", "buy super free spins", "buy super free spin",
 ]
 
 HELP_PHRASES = [
@@ -375,6 +391,7 @@ RESULT_STRONG_PHRASES = [
 ]
 
 BIGWIN_STRONG_PHRASES = [
+    "sensational",
     "big win", "bigwin", "mega win", "megawin", "super mega win", "super megawin",
     "super win", "superwin", "superi win", "jumbo win", "jumbowin", "jumbown", "jumbo loin",
     "huge win", "hugewin", "massive win", "massivewin",
@@ -412,6 +429,8 @@ def normalize_text(text):
         "jumboloin": "jumbo win",
         "jumbo": "jumbo",
         "loin": "win",
+        "congradulations": "congratulations",
+        "congradulation": "congratulations",
         "hugewin": "huge win",
         "massivewin": "massive win",
         "epicwin": "epic win",
@@ -1135,6 +1154,8 @@ def feature_keep_score(record):
     noise = float(record.get("noise_score", 0.0))
     top_score = float(record.get("top_score", 0.0))
     obstruction = float(record.get("feature_obstruction_score", 0.0))
+    help_quality = float(record.get("help_quality_score", 0.0))
+    has_pp_counter = has_record_pp_free_spins_left(record)
 
     clear_score = min(2.5, blur / 1000.0)
     noise_penalty = min(3.0, noise * 0.55)
@@ -1142,7 +1163,7 @@ def feature_keep_score(record):
         obstruction_penalty = min(3.0, obstruction * 0.45)
     else:
         obstruction_penalty = min(8.0, obstruction * 1.8)
-    return (
+    score = (
         ui_score * 2.0
         + active_score * 1.6
         + clear_score
@@ -1150,6 +1171,11 @@ def feature_keep_score(record):
         - obstruction_penalty
         + top_score * 0.05
     )
+    if has_pp_counter:
+        score += 28.0
+    elif help_quality >= HELP_MIN_QUALITY_SCORE:
+        score -= help_quality * 2.2
+    return score
 
 
 def bigwin_keep_score(record):
@@ -1252,7 +1278,7 @@ def help_visual_signature(rec):
         return rec.get("_help_visual_signature")
 
     path = rec.get("save_path")
-    if not path:
+    if not path or not os.path.exists(path):
         rec["_help_visual_signature"] = None
         return None
 
@@ -1411,9 +1437,12 @@ def help_page_quality_score(img, ocr_items=None):
 
         if re.fullmatch(r"\d{1,3}", normalized):
             numeric_item_count += 1
-        if has_any(normalized, ["paytable", "pay table", "symbol payout values"]):
+        if has_any(normalized, [
+            "paytable", "pay table", "symbol payout values",
+            "symbols pay anywhere", "symbols pay",
+        ]):
             paytable_title = True
-        if has_any(normalized, ["symbol", "wild", "scatter", "payout"]):
+        if has_any(normalized, ["symbol", "symbols pay", "wild", "scatter", "payout"]):
             symbol_table_terms += 1
 
         if len(normalized) < 3:
@@ -1573,6 +1602,14 @@ def has_loading_strong_signal(joined):
 def has_transition_cover_text_signal(joined):
     compact = joined.replace(" ", "")
     if has_any(joined, TRANSITION_COVER_TERMS):
+        return True
+    if (
+        has_any(joined, ["congratulations", "congrats", "you have won", "you won"])
+        and has_any(joined, ["free spins", "free spin"])
+        and re.search(r"\b\d{1,3}\b", joined)
+    ):
+        return True
+    if re.search(r"(congratulations|youhavewon|youwon)\d{1,3}freespins?", compact):
         return True
     if re.search(r"\b\d+\s*chances?\s*to\s*play\b", joined):
         return True
@@ -1872,12 +1909,15 @@ def has_feature_buy_signal(joined, ocr_items=None, roi_w=0, roi_h=0):
         "cost", "current cost", "bet size", "bet level", "quantity",
         "select start", "click buy", "trigger the free game", "trigger the free spins",
         "amount", "buy a free game", "buy free game", "click buy to play",
-        "with current cost",
+        "with current cost", "buy free spins", "buy super free spins",
+        "buy free spin", "buy super free spin",
     ])
     has_amount = bool(re.search(r"\b\d[\d,. ]{1,}\b", joined))
 
     action_words = set()
     has_large_modal_title = False
+    has_center_buy_title = False
+    has_center_free_spins_title = False
     for box, text, score in (ocr_items or []):
         if score < SCORE_THRESHOLD:
             continue
@@ -1898,6 +1938,19 @@ def has_feature_buy_signal(joined, ocr_items=None, roi_w=0, roi_h=0):
             if is_centered and is_modal_area and is_large_title:
                 has_large_modal_title = True
 
+        is_centered_title_area = (
+            (roi_w <= 0 or roi_w * 0.18 <= cx <= roi_w * 0.82)
+            and (roi_h <= 0 or roi_h * 0.16 <= cy <= roi_h * 0.68)
+            and (roi_w <= 0 or width >= roi_w * 0.10)
+            and (roi_h <= 0 or height >= roi_h * 0.030)
+        )
+        if is_centered_title_area and re.fullmatch(r"buy", normalized):
+            has_center_buy_title = True
+        if is_centered_title_area and has_any(normalized, [
+            "free spins", "free spin", "super free spins", "super free spin",
+        ]):
+            has_center_free_spins_title = True
+
         if not has_any(normalized, ["cancel", "start", "buy"]):
             continue
         if roi_h > 0 and cy < roi_h * 0.42:
@@ -1910,14 +1963,27 @@ def has_feature_buy_signal(joined, ocr_items=None, roi_w=0, roi_h=0):
             action_words.add("buy")
 
     has_action_pair = len(action_words) >= 2
+    has_split_modal_title = has_center_buy_title and has_center_free_spins_title
     has_purchase_flow = purchase_detail and (has_action_pair or has_amount)
 
     # Basegame often has a persistent "Feature Buy" button. Keep Feature Buy for
     # the purchase dialog itself: a modal title plus cost/quantity/action details.
-    return has_purchase_flow and (has_large_modal_title or has_action_pair)
+    return has_purchase_flow and (has_large_modal_title or has_split_modal_title or has_action_pair)
 
 
 def has_help_signal(joined, ocr_items=None, roi_w=0, roi_h=0):
+    compact = joined.replace(" ", "")
+    symbol_pay_only_over_game_ui = (
+        ("symbolspayanywhere" in compact or "symbolspay" in compact)
+        and has_any(joined, ["credit", "bet", "autoplay", "free spins left", "buy free spins"])
+        and not has_any(joined, [
+            "game rules", "paytable", "pay table", "symbol payout", "payout values",
+            "wild symbol", "scatter symbol", "page",
+        ])
+    )
+    if symbol_pay_only_over_game_ui:
+        return False
+
     if has_any(joined, HELP_PHRASES):
         return True
 
@@ -1930,6 +1996,14 @@ def has_help_signal(joined, ocr_items=None, roi_w=0, roi_h=0):
         return False
 
     joined_items = " ".join(text_items)
+    compact_items = joined_items.replace(" ", "")
+    if (
+        ("symbolspayanywhere" in compact_items or "symbolspay" in compact_items)
+        and has_any(joined_items, ["credit", "bet", "autoplay", "free spins left"])
+        and not has_any(joined_items, ["game rules", "paytable", "page", "wild symbol", "scatter symbol"])
+    ):
+        return False
+
     rules_terms = [
         "symbol", "symbols", "wild", "scatter", "payout", "paytable",
         "reels", "ways", "spins", "winning", "values", "occupy",
@@ -2176,6 +2250,15 @@ def has_bigwin_strong_signal(joined):
     return False
 
 
+def has_pp_bigwin_title_signal(joined):
+    compact = joined.replace(" ", "")
+    if "sensational" in compact:
+        return True
+    if re.search(r"\bnice\b", joined) and re.search(r"\d", joined):
+        return True
+    return False
+
+
 def has_jackpot_meter_signal(joined):
     if not has_any(joined, ["jackpot", "grand", "major", "minor", "mini"]):
         return False
@@ -2197,6 +2280,7 @@ def get_bigwin_keep_signal_score(img, ocr_items, roi_w, roi_h, category_scores=N
     reasons = []
 
     strong_win_label = has_bigwin_strong_signal(joined)
+    pp_win_label = has_pp_bigwin_title_signal(joined)
     total_win_label = has_any(joined, ["total win", "you won", "youve won", "you ve won"])
     jackpot_meter = has_jackpot_meter_signal(joined)
     result_layout = has_large_result_layout(ocr_items or [], roi_w, roi_h)
@@ -2216,10 +2300,10 @@ def get_bigwin_keep_signal_score(img, ocr_items, roi_w, roi_h, category_scores=N
     )
 
     score = 0.0
-    if strong_win_label and has_large_amount:
+    if (strong_win_label or pp_win_label) and has_large_amount:
         score = 14.0
         reasons.append("bigwin_label_with_large_amount")
-    elif strong_win_label and has_number_text:
+    elif (strong_win_label or pp_win_label) and has_number_text:
         score = 12.0
         reasons.append("bigwin_label_with_number_text")
     elif total_win_label and result_layout and has_number_text:
@@ -2478,6 +2562,7 @@ def classify_frame(cropped, ocr_items, roi_w, roi_h):
     has_basegame_trigger_hint = has_any(joined, ["triggers", "trigger", "feature buy"])
     has_jackpot_meter = has_jackpot_meter_signal(joined)
     has_bigwin_label = has_bigwin_strong_signal(joined)
+    has_pp_bigwin_label = has_pp_bigwin_title_signal(joined)
     has_total_win_label = has_any(joined, ["total win", "you won", "youve won", "you ve won"])
     has_help_page = has_help_signal(joined, ocr_items, roi_w, roi_h)
     has_feature_buy_modal = has_feature_buy_signal(joined, ocr_items, roi_w, roi_h)
@@ -2506,7 +2591,7 @@ def classify_frame(cropped, ocr_items, roi_w, roi_h):
         )
     has_brand_logo_splash = has_brand_logo_splash_signal(cropped, ocr_items)
     has_bigwin_overlay = (
-        has_bigwin_label
+        (has_bigwin_label or has_pp_bigwin_label)
         and (
             has_large_center_payout_text(ocr_items, roi_w, roi_h)
             or has_large_center_payout_visual(cropped)
@@ -2520,6 +2605,7 @@ def classify_frame(cropped, ocr_items, roi_w, roi_h):
     has_transition_action_text = has_any(joined, [
         "skip", "press", "continue", "confirm", "next", "accept", "ignore",
         "press start", "tap to start", "click to start",
+        "congratulations", "you have won",
     ])
     result_or_transition_claim = category in ["Result", "Transition"]
 
@@ -3044,9 +3130,11 @@ def select_feature_ui_images(records, cluster_count=3, keep_per_cluster=3):
     if not records:
         return [], []
 
+    min_keep_pool = cluster_count * keep_per_cluster
     ranked_records = sorted(
         records,
         key=lambda rec: (
+            1 if has_record_pp_free_spins_left(rec) else 0,
             rec.get("feature_active_score", 0.0),
             rec.get("feature_ui_score", 0.0),
             feature_keep_score(rec),
@@ -3057,7 +3145,18 @@ def select_feature_ui_images(records, cluster_count=3, keep_per_cluster=3):
         reverse=True
     )
 
-    min_keep_pool = cluster_count * keep_per_cluster
+    pp_counter_records = [
+        rec for rec in ranked_records
+        if has_record_pp_free_spins_left(rec)
+        and rec.get("feature_obstruction_score", 0.0) < FEATURE_BOARD_OBSTRUCTION_THRESHOLD
+    ]
+    if len(pp_counter_records) >= min_keep_pool:
+        candidates = sorted(pp_counter_records, key=feature_keep_score, reverse=True)
+        keep_records = candidates[:min_keep_pool]
+        keep_ids = {id(rec) for rec in keep_records}
+        remove_records = [rec for rec in records if id(rec) not in keep_ids]
+        return keep_records, remove_records
+
     top_pool_count = max(min_keep_pool, int(np.ceil(len(ranked_records) * FEATURE_UI_KEEP_TOP_RATIO)))
     top_pool_count = min(len(ranked_records), top_pool_count)
 
@@ -3079,6 +3178,10 @@ def select_feature_ui_images(records, cluster_count=3, keep_per_cluster=3):
         if (
             rec.get("feature_obstruction_score", 0.0) < FEATURE_BOARD_OBSTRUCTION_THRESHOLD
             or rec.get("feature_active_score", 0.0) >= FEATURE_ACTIVE_MIN_SCORE_FOR_KEEP
+        )
+        and (
+            has_record_pp_free_spins_left(rec)
+            or rec.get("help_quality_score", 0.0) < HELP_MIN_QUALITY_SCORE
         )
     ]
     if len(visible_board_candidates) >= min_keep_pool:
@@ -3104,16 +3207,58 @@ def select_transition_images(records):
     if not records:
         return [], []
 
-    records.sort(
-        key=lambda rec: (
+    def transition_rank(rec):
+        joined = record_text_joined(rec)
+        has_free_spin_award = (
+            has_any(joined, ["you have won", "you won", "congratulations"])
+            and has_any(joined, ["free spins", "free spin", "freespins", "freespin"])
+        )
+        has_settings_help_text = has_any(joined, [
+            "settings menu", "information screen", "game history",
+            "skip screens option", "auto skips",
+        ])
+        return (
+            1 if has_free_spin_award else 0,
+            -1 if has_settings_help_text else 0,
             rec.get("transition_keep_score", rec.get("top_score", 0.0)),
             -rec.get("noise_score", 0.0),
             rec.get("top_score", 0.0),
-        ),
-        reverse=True
-    )
+        )
+
     k = top_k_for_category("Transition")
-    return records[:k], records[k:]
+    groups = []
+    current_group = []
+    last_frame = None
+    for rec in sorted(records, key=lambda item: int(item.get("frame_idx", 0) or 0)):
+        frame = int(rec.get("frame_idx", 0) or 0)
+        if current_group and last_frame is not None and frame - last_frame > TRANSITION_EVENT_GAP_FRAMES:
+            groups.append(current_group)
+            current_group = []
+        current_group.append(rec)
+        last_frame = frame
+    if current_group:
+        groups.append(current_group)
+
+    keep_records = []
+    keep_ids = set()
+    event_picks = [max(group, key=transition_rank) for group in groups]
+    event_picks.sort(key=transition_rank, reverse=True)
+    for rec in event_picks:
+        if len(keep_records) >= k:
+            break
+        keep_records.append(rec)
+        keep_ids.add(id(rec))
+
+    remaining = [rec for rec in records if id(rec) not in keep_ids]
+    remaining.sort(key=transition_rank, reverse=True)
+    for rec in remaining:
+        if len(keep_records) >= k:
+            break
+        keep_records.append(rec)
+        keep_ids.add(id(rec))
+
+    remove_records = [rec for rec in records if id(rec) not in keep_ids]
+    return keep_records, remove_records
 
 
 def select_bigwin_images(records):
@@ -3319,6 +3464,14 @@ def is_plain_rule_help_record(rec):
     )
 
 
+def has_record_web_help_chrome(rec):
+    joined = record_text_joined(rec)
+    return has_any(joined, [
+        "home figma", "notion", "chatgpt", "gitlab", "google chrome",
+        "chrome", "pragmatic play",
+    ]) and has_any(joined, ["page", "game rules", "information screen", "symbol"])
+
+
 def help_rule_keep_score(rec):
     stats = help_rule_text_stats(rec)
     return (
@@ -3348,9 +3501,49 @@ def select_help_images(records):
         reverse=True
     )
 
-    # Help is now used as a rule corpus for downstream AI/report/symbol-table
-    # steps, so keep substantially more useful pages than the visual categories.
-    k = max(top_k_for_category("Help"), min(220, len(records)))
+    web_help_records = [
+        rec for rec in ranked_records
+        if has_record_web_help_chrome(rec) and is_plain_rule_help_record(rec)
+    ]
+    if len(web_help_records) >= 3:
+        ranked_records = web_help_records
+    else:
+        grouped = []
+        current_group = []
+        last_frame = None
+        for rec in sorted(ranked_records, key=lambda item: int(item.get("frame_idx", 0) or 0)):
+            frame = int(rec.get("frame_idx", 0) or 0)
+            if current_group and last_frame is not None and frame - last_frame > HELP_EVENT_GAP_FRAMES:
+                grouped.append(current_group)
+                current_group = []
+            current_group.append(rec)
+            last_frame = frame
+        if current_group:
+            grouped.append(current_group)
+        if grouped:
+            best_group = max(
+                grouped,
+                key=lambda group: (
+                    sum(1 for rec in group if is_plain_rule_help_record(rec)),
+                    sum(float(rec.get("help_quality_score", 0.0)) for rec in group) / max(1, len(group)),
+                    len(group),
+                )
+            )
+            ranked_records = sorted(
+                best_group,
+                key=lambda rec: (
+                    help_rule_keep_score(rec),
+                    rec.get("help_quality_score", 0.0),
+                    rec.get("blur_score", 0.0),
+                    -rec.get("noise_score", 0.0),
+                    rec.get("top_score", 0.0),
+                ),
+                reverse=True
+            )
+
+    # Keep Help as a compact rules corpus.  Over-keeping repeated web/browser
+    # captures pollutes downstream symbol extraction and reports.
+    k = min(top_k_for_category("Help"), HELP_MAX_FINAL_PAGES, len(ranked_records))
     keep_records = []
     keep_ids = set()
 
@@ -3536,6 +3729,18 @@ def move_records_to_low_score(records, low_score_dir, category):
 
 def record_text_joined(rec):
     return " ".join(normalize_text(text) for text in record_text_items(rec))
+
+
+def has_record_pp_free_spins_left(rec):
+    joined = record_text_joined(rec)
+    compact = joined.replace(" ", "")
+    if "freespinsleft" in compact or "freespinleft" in compact:
+        return True
+    return (
+        has_any(joined, ["free spins", "free spin", "freespins", "freespin"])
+        and "left" in joined
+        and bool(re.search(r"\b\d{1,3}\b", joined))
+    )
 
 
 def has_record_feature_text(rec):

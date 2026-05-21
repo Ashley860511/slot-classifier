@@ -178,6 +178,25 @@ def _reject_text_only_candidate(img) -> tuple[bool, str]:
     return False, "ok"
 
 
+def _is_trusted_pp_paytable_crop_info(info: dict[str, Any]) -> bool:
+    """Known PP web paytable supplemental boxes are trusted symbol crops."""
+    source_page = str(info.get("source_page_path") or "").lower()
+    if "low_score" in source_page:
+        return False
+    box = info.get("source_box") or []
+    if len(box) != 4:
+        return False
+    try:
+        x, y, w, h = [int(v) for v in box]
+    except (TypeError, ValueError):
+        return False
+    def near(value, targets, tolerance=8):
+        return any(abs(value - target) <= tolerance for target in targets)
+
+    page2_multiplier = near(x, [72, 232, 390, 544], tolerance=16) and near(y, [216], tolerance=10) and 146 <= w <= 168 and 100 <= h <= 126
+    return page2_multiplier
+
+
 def _reject_low_quality_icon(metrics: dict[str, Any]) -> tuple[bool, str]:
     """Reject numeric scraps and clipped fragments after local quality scoring."""
     score = float(metrics.get("score", 0.0) or 0.0)
@@ -185,6 +204,10 @@ def _reject_low_quality_icon(metrics: dict[str, Any]) -> tuple[bool, str]:
     h = int(metrics.get("height", 0) or 0)
     content_ratio = float(metrics.get("content_ratio", 0.0) or 0.0)
     edge_touches = int(metrics.get("edge_touches", 0) or 0)
+    yellow_fill_ratio = float(metrics.get("yellow_fill_ratio", 0.0) or 0.0)
+    white_fill_ratio = float(metrics.get("white_fill_ratio", 0.0) or 0.0)
+    red_fill_ratio = float(metrics.get("red_fill_ratio", 0.0) or 0.0)
+    coloured_fill_ratio = yellow_fill_ratio + white_fill_ratio + red_fill_ratio
 
     if content_ratio < 0.085:
         return True, "low_content_text_scrap"
@@ -195,12 +218,16 @@ def _reject_low_quality_icon(metrics: dict[str, Any]) -> tuple[bool, str]:
     # margin; compact, high-content icon crops often touch all four edges but
     # are complete artwork.
     if edge_touches >= 3 and content_ratio < 0.55:
+        if content_ratio >= 0.40 and coloured_fill_ratio >= 0.045 and min(w, h) >= 70:
+            return False, "ok_coloured_edge_icon"
         return True, "clipped_fragment"
     if min(w, h) < 42:
         return True, "too_thin_fragment"
     if w < 48 and h > 70 and score < 0.86:
         return True, "vertical_fragment"
     if h < 46 and score < 0.86:
+        if h >= 40 and content_ratio >= 0.50 and coloured_fill_ratio >= 0.045:
+            return False, "ok_coloured_short_icon"
         return True, "horizontal_fragment"
 
     return False, "ok"
@@ -234,9 +261,15 @@ def _reject_final_symbol_candidate(metrics: dict[str, Any]) -> tuple[bool, str]:
 
     if score < 0.60:
         return True, "final_low_score"
+    if coloured_fill_ratio < 0.012 and content_ratio < 0.18 and max(w, h) <= 72:
+        return True, "final_text_number_fragment"
     if content_ratio < 0.105:
+        if score >= 0.74 and max(w, h) >= 95 and min(w, h) >= 45:
+            return False, "ok_large_low_content_symbol"
         return True, "final_low_content"
     if min(w, h) < 50:
+        if min(w, h) >= 40 and content_ratio >= 0.45 and coloured_fill_ratio >= 0.045:
+            return False, "ok_coloured_small_icon"
         return True, "final_too_small"
     if aspect < 0.32 or aspect > 2.45:
         return True, "final_bad_aspect"
@@ -255,8 +288,12 @@ def _reject_final_symbol_candidate(metrics: dict[str, Any]) -> tuple[bool, str]:
         or white_fill_ratio > 0.014
     )
     if edge_touches >= 3 and content_ratio > 0.60 and not is_coloured_full_icon:
+        if score >= 0.56 and min(w, h) >= 42:
+            return False, "ok_full_bleed_symbol"
         return True, "final_full_rect_fragment"
     if edge_touches >= 3 and content_ratio < 0.50:
+        if content_ratio >= 0.40 and coloured_fill_ratio >= 0.045 and min(w, h) >= 70:
+            return False, "ok_coloured_edge_icon"
         return True, "final_likely_clipped"
     if edge_touches >= 2 and score < 0.82 and not is_coloured_full_icon:
         return True, "final_edge_clipped"
@@ -276,6 +313,232 @@ def _reject_final_symbol_candidate(metrics: dict[str, Any]) -> tuple[bool, str]:
         and score < 0.90
     ):
         return True, "final_low_art_symbol_fragment"
+    return False, "ok"
+
+
+def _allow_primary_paytable_low_score(rec: dict[str, Any], final_reason: str) -> bool:
+    """Keep slightly low-scored crops from primary Help pages when they look like real art."""
+    if final_reason != "final_low_score":
+        return False
+
+    source_page = str(rec.get("source_page_path") or "").lower()
+    if "low_score" in source_page:
+        return False
+
+    if _is_large_full_page_source(rec):
+        return False
+
+    metrics = rec.get("metrics") or {}
+    score = float(metrics.get("score", 0.0) or 0.0)
+    w = int(metrics.get("width", 0) or 0)
+    h = int(metrics.get("height", 0) or 0)
+    content_ratio = float(metrics.get("content_ratio", 0.0) or 0.0)
+    yellow_fill_ratio = float(metrics.get("yellow_fill_ratio", 0.0) or 0.0)
+    white_fill_ratio = float(metrics.get("white_fill_ratio", 0.0) or 0.0)
+    red_fill_ratio = float(metrics.get("red_fill_ratio", 0.0) or 0.0)
+    coloured_fill_ratio = yellow_fill_ratio + white_fill_ratio + red_fill_ratio
+    return (
+        score >= 0.56
+        and min(w, h) >= 45
+        and content_ratio >= 0.16
+        and coloured_fill_ratio >= 0.035
+    )
+
+
+def _allow_primary_paytable_edge_icon(info: dict[str, Any], metrics: dict[str, Any], reason: str) -> bool:
+    """Allow real paytable artwork that only looks clipped because it fills the crop."""
+    if reason not in {
+        "clipped_fragment", "horizontal_fragment", "vertical_fragment",
+        "final_likely_clipped", "final_edge_clipped", "final_full_rect_fragment",
+    }:
+        return False
+
+    source_page = str(info.get("source_page_path") or "").lower()
+    if "low_score" in source_page:
+        return False
+
+    if _is_large_full_page_source(info):
+        return False
+
+    score = float(metrics.get("score", 0.0) or 0.0)
+    w = int(metrics.get("width", 0) or 0)
+    h = int(metrics.get("height", 0) or 0)
+    content_ratio = float(metrics.get("content_ratio", 0.0) or 0.0)
+    yellow_fill_ratio = float(metrics.get("yellow_fill_ratio", 0.0) or 0.0)
+    white_fill_ratio = float(metrics.get("white_fill_ratio", 0.0) or 0.0)
+    red_fill_ratio = float(metrics.get("red_fill_ratio", 0.0) or 0.0)
+    coloured_fill_ratio = yellow_fill_ratio + white_fill_ratio + red_fill_ratio
+    return (
+        score >= 0.55
+        and min(w, h) >= 50
+        and content_ratio >= 0.24
+        and coloured_fill_ratio >= 0.030
+    )
+
+
+def _is_large_full_page_source(info: dict[str, Any]) -> bool:
+    """Return True for full-page Help crops where edge allowances are risky."""
+    size = info.get("source_size") or []
+    if not isinstance(size, (list, tuple)) or len(size) < 2:
+        return False
+    try:
+        source_w = int(size[0])
+        source_h = int(size[1])
+    except Exception:
+        return False
+    return source_w >= 950 and source_h >= 780
+
+
+def _reject_payout_text_bleed(img) -> tuple[bool, str]:
+    """Reject symbol crops that still include payout-number rows."""
+    try:
+        import numpy as np
+    except Exception:
+        return False, "no_numpy"
+
+    rgba = img.convert("RGBA")
+    w, h = rgba.size
+    if w < 42 or h < 54:
+        return False, "ok"
+
+    arr = np.array(rgba, dtype=np.uint8)
+    rgb = arr[:, :, :3].astype(np.float32)
+    alpha = arr[:, :, 3] > 8
+    bright = rgb.mean(axis=2)
+    chroma = rgb.max(axis=2) - rgb.min(axis=2)
+    text_like = alpha & (
+        ((bright > 125) & (chroma < 58))
+        | ((rgb[:, :, 0] > 135) & (rgb[:, :, 1] > 105) & (rgb[:, :, 2] < 125) & (chroma > 28))
+    )
+    colourful_art = alpha & (bright > 45) & (chroma > 42)
+
+    lower_start = int(h * 0.48)
+    lower_text = float(text_like[lower_start:, :].mean())
+    upper_art = float(colourful_art[:lower_start, :].mean())
+    if lower_text < 0.035 or upper_art < 0.045:
+        return False, "ok"
+
+    row_text = text_like.mean(axis=1)
+    row_art = colourful_art.mean(axis=1)
+    active_rows = (
+        (row_text[lower_start:] > max(0.055, float(row_text.mean() + row_text.std() * 0.45)))
+        & (row_art[lower_start:] < 0.060)
+    )
+    run = 0
+    for value in active_rows.tolist():
+        run = run + 1 if value else 0
+        if run >= 2:
+            return True, "final_payout_text_bleed"
+    return False, "ok"
+
+
+def _border_foreground_stats(img) -> dict[str, Any] | None:
+    """
+    Estimate real artwork foreground against the crop border colour.
+
+    Full-page Help crops often have an opaque dark/purple background.  The basic
+    alpha/brightness metrics then treat the whole crop as "content", which lets
+    payout numbers and explanatory text survive.  Comparing pixels to the border
+    colour gives a better signal for standalone symbol artwork.
+    """
+    try:
+        import numpy as np
+    except Exception:
+        return None
+
+    rgba = img.convert("RGBA")
+    w, h = rgba.size
+    if w < 24 or h < 24:
+        return None
+
+    arr = np.array(rgba, dtype=np.uint8)
+    rgb = arr[:, :, :3].astype(np.float32)
+    alpha = arr[:, :, 3] > 8
+    border_w = max(3, min(w, h) // 12)
+    border = np.concatenate([
+        rgb[:border_w, :, :].reshape(-1, 3),
+        rgb[-border_w:, :, :].reshape(-1, 3),
+        rgb[:, :border_w, :].reshape(-1, 3),
+        rgb[:, -border_w:, :].reshape(-1, 3),
+    ])
+    bg = np.median(border, axis=0)
+    bg_bright = float(bg.mean())
+
+    bright = rgb.mean(axis=2)
+    chroma = rgb.max(axis=2) - rgb.min(axis=2)
+    dist = np.sqrt(((rgb - bg) ** 2).sum(axis=2))
+    foreground = alpha & (dist > 34) & ((chroma > 22) | (np.abs(bright - bg_bright) > 28))
+    text_like = foreground & (
+        ((bright > 125) & (chroma < 75))
+        | ((rgb[:, :, 0] > 135) & (rgb[:, :, 1] > 105) & (rgb[:, :, 2] < 135) & (chroma > 25))
+        | ((rgb[:, :, 1] > 120) & (rgb[:, :, 2] > 120) & (rgb[:, :, 0] < 135))
+    )
+    colourful = foreground & (chroma > 45) & (bright > 35)
+
+    if int(foreground.sum()) <= 0:
+        return {
+            "foreground_ratio": 0.0,
+            "text_ratio": 0.0,
+            "colourful_ratio": 0.0,
+            "bbox": [0, 0, 0, 0],
+            "bbox_aspect": 0.0,
+        }
+
+    ys, xs = np.where(foreground)
+    bbox = [int(xs.min()), int(ys.min()), int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1)]
+    return {
+        "foreground_ratio": float(foreground.mean()),
+        "text_ratio": float(text_like.mean()),
+        "colourful_ratio": float(colourful.mean()),
+        "bbox": bbox,
+        "bbox_aspect": bbox[2] / max(1.0, float(bbox[3])),
+    }
+
+
+def _reject_full_page_text_fragment(rec: dict[str, Any], img) -> tuple[bool, str]:
+    """Reject labels/payout fragments from full-page or mobile-panel Help crops."""
+    size = rec.get("source_size") or []
+    if not isinstance(size, (list, tuple)) or len(size) < 2:
+        return False, "ok"
+    try:
+        source_w = int(size[0])
+        source_h = int(size[1])
+    except Exception:
+        return False, "ok"
+
+    full_page_like = (
+        (source_w >= 950 and source_h >= 780)
+        or (source_h >= 850 and source_h >= source_w * 1.35)
+    )
+    if not full_page_like:
+        return False, "ok"
+
+    stats = _border_foreground_stats(img)
+    if not stats:
+        return False, "ok"
+
+    fg_ratio = float(stats["foreground_ratio"])
+    text_ratio = float(stats["text_ratio"])
+    colour_ratio = float(stats["colourful_ratio"])
+    bbox = stats["bbox"]
+    bbox_aspect = float(stats["bbox_aspect"])
+    crop_aspect = img.width / max(1.0, float(img.height))
+
+    # Thin text rows such as "SYMBOL", "3 - 36.00", or explanatory sentences.
+    if bbox[3] <= max(30, img.height * 0.45) and bbox_aspect >= 1.55 and text_ratio >= 0.035:
+        return True, "final_full_page_text_row"
+    if bbox_aspect >= 1.45 and fg_ratio < 0.09 and text_ratio >= 0.020:
+        return True, "final_full_page_sparse_text_row"
+
+    # Wide crops with a small icon plus adjacent sentence/label text.
+    if crop_aspect >= 1.55 and text_ratio >= 0.09 and colour_ratio < 0.30:
+        return True, "final_full_page_label_bleed"
+
+    # Low-art foreground dominated by text colours.  Real A/K/Q/J/10 symbols
+    # have much denser colourful artwork, so this avoids removing letter icons.
+    if fg_ratio < 0.22 and text_ratio >= 0.055 and text_ratio >= colour_ratio * 0.55:
+        return True, "final_full_page_text_fragment"
+
     return False, "ok"
 
 
@@ -346,25 +609,25 @@ def _icons_visually_same(path_a: str, path_b: str) -> bool:
         return False
 
 
-def _save_icon(img, out_path: Path, box_size: int = 160) -> Path:
+def _save_icon(img, out_path: Path, max_side: int = 240) -> Path:
+    """Save the crop at its natural aspect ratio without synthetic padding."""
     rgba = img.convert("RGBA")
-    rgba.thumbnail((box_size, box_size), Image.Resampling.LANCZOS)
-    canvas = Image.new("RGBA", (box_size, box_size), (0, 0, 0, 0))
-    canvas.alpha_composite(rgba, ((box_size - rgba.width) // 2, (box_size - rgba.height) // 2))
+    if max(rgba.size) > max_side:
+        rgba.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        canvas.save(out_path, "PNG")
+        rgba.save(out_path, "PNG")
         return out_path
     except PermissionError:
         fallback = out_path.with_name(f"{out_path.stem}_{int(time.time())}{out_path.suffix}")
         try:
-            canvas.save(fallback, "PNG")
+            rgba.save(fallback, "PNG")
             return fallback
         except PermissionError:
             export_root = Path.cwd() / "symbol_table_exports" / f"{out_path.parent.name}_{int(time.time())}"
             export_root.mkdir(parents=True, exist_ok=True)
             final_fallback = export_root / out_path.name
-            canvas.save(final_fallback, "PNG")
+            rgba.save(final_fallback, "PNG")
             return final_fallback
 
 
@@ -489,16 +752,22 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
 
     records: list[dict[str, Any]] = []
     for idx, img in enumerate(icon_images):
+        trusted_pp_crop = _is_trusted_pp_paytable_crop_info(img.info)
         rejected, reject_reason = _reject_text_only_candidate(img)
         if rejected:
             continue
         metrics = _image_metrics(img)
         rejected, quality_reason = _reject_low_quality_icon(metrics)
-        if rejected:
+        if rejected and _allow_primary_paytable_edge_icon(img.info, metrics, quality_reason):
+            rejected = False
+            quality_reason = "ok_primary_paytable_edge_icon"
+        if rejected and not trusted_pp_crop:
             continue
         metrics["export_filter"] = reject_reason
         metrics["quality_filter"] = quality_reason
         score = float(metrics.get("score", 0.0))
+        if trusted_pp_crop and score < 0.35:
+            continue
         candidate_id = f"candidate_{idx:03d}"
         filename = f"{candidate_id}_score_{score:.2f}.png"
         out_path = candidates_dir / filename
@@ -513,6 +782,9 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
             "source_page_path": img.info.get("source_page_path"),
             "source_box_index": img.info.get("source_box_index"),
             "source_box": img.info.get("source_box"),
+            "source_crop_box": img.info.get("source_crop_box"),
+            "source_size": img.info.get("source_size"),
+            "trusted_pp_paytable_crop": trusted_pp_crop,
             "metrics": metrics,
         })
 
@@ -522,6 +794,31 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
     final_pool = []
     for rec in records:
         final_rejected, final_reason = _reject_final_symbol_candidate(rec.get("metrics", {}))
+        trusted_pp_crop = bool(rec.get("trusted_pp_paytable_crop"))
+        if final_rejected and trusted_pp_crop and final_reason in {
+            "final_low_score", "final_edge_clipped", "final_likely_clipped",
+            "final_full_rect_fragment", "final_too_small",
+        }:
+            final_rejected = False
+            final_reason = "ok_trusted_pp_paytable_crop"
+        if final_rejected and _allow_primary_paytable_low_score(rec, final_reason):
+            final_rejected = False
+            final_reason = "ok_primary_paytable_low_score"
+        if final_rejected and _allow_primary_paytable_edge_icon(rec, rec.get("metrics") or {}, final_reason):
+            final_rejected = False
+            final_reason = "ok_primary_paytable_edge_icon"
+        if not final_rejected:
+            try:
+                with Image.open(rec["path"]) as rec_img:
+                    bleed_rejected, bleed_reason = _reject_payout_text_bleed(rec_img)
+                    if not bleed_rejected:
+                        bleed_rejected, bleed_reason = _reject_full_page_text_fragment(rec, rec_img)
+                if bleed_rejected:
+                    final_rejected = True
+                    final_reason = bleed_reason
+            except OSError:
+                final_rejected = True
+                final_reason = "final_unreadable"
         rec["final_filter"] = final_reason
         if not final_rejected:
             final_pool.append(rec)

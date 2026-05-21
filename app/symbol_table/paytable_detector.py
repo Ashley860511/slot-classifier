@@ -138,9 +138,13 @@ def paytable_score_from_ocr(ocr_items) -> tuple[float, list[str]]:
 
     if any(term in joined for term in [
         "symbol payout", "payout values", "symbol pays", "symbol pay",
+        "symbols pay anywhere", "symbols pay", "same symbol",
     ]):
         score += 4.0
         reasons.append("symbol_payout_title")
+    if any(term in joined for term in ["multiplier symbol", "multiplier symbols"]):
+        score += 3.0
+        reasons.append("multiplier_symbols")
     elif re.search(r"\bpay\s*table\b|\bpaytable\b", joined):
         score += 1.0
         reasons.append("paytable_word")
@@ -181,7 +185,6 @@ def paytable_score_from_cv(dialog_img, detect_icon_components_in_dialog=None) ->
         return score, reasons
 
     try:
-        import cv2
         import numpy as np
     except Exception:
         return score, reasons
@@ -190,9 +193,9 @@ def paytable_score_from_cv(dialog_img, detect_icon_components_in_dialog=None) ->
     if arr.size == 0:
         return score, reasons
 
-    hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)
-    sat = hsv[:, :, 1]
-    val = hsv[:, :, 2]
+    arr_f = arr.astype(np.float32)
+    val = arr_f.max(axis=2)
+    sat = arr_f.max(axis=2) - arr_f.min(axis=2)
     dark_plain_ratio = float(np.mean((val <= 110) & (sat <= 105)))
     dark_ratio = float(np.mean(val <= 115))
     if dark_plain_ratio >= 0.30 or dark_ratio >= 0.42:
@@ -276,13 +279,16 @@ def is_local_paytable_page(
     has_game_rules = _has_game_rules_text(joined)
     has_symbol_payout_title = any(term in joined for term in [
         "symbol payout", "payout values", "symbol pays", "symbol pay",
+        "symbols pay anywhere", "symbols pay", "same symbol",
     ])
+    has_multiplier_symbols = any(term in joined for term in ["multiplier symbol", "multiplier symbols"])
     has_paytable_word = bool(re.search(r"\bpay\s*table\b|\bpaytable\b", joined))
     ok = (
         not has_buy_modal
-        and not (has_game_rules and not has_symbol_payout_title)
+        and not (has_game_rules and not (has_symbol_payout_title or has_multiplier_symbols) and cv_score < 4.0)
         and (
             (has_symbol_payout_title and total >= 5.5)
+            or (has_multiplier_symbols and total >= 4.8)
             or (has_paytable_word and ocr_score >= 4.0 and cv_score >= 3.0 and total >= 7.0)
             or (ocr_score >= 4.0 and cv_score >= 3.0 and total >= 7.0)
         )
@@ -335,17 +341,89 @@ def find_paytable_pages_local(
         f"OCR scanned {ocr_scanned}/{len(all_help_images)}, candidates {len(scored)}"
     )
 
-    scored.sort(key=lambda item: item[1])
     page_limit = max(1, int(max_pages))
-    if len(scored) <= page_limit:
-        selected = scored
-    else:
+
+    def is_primary_help_page(item):
+        parts = {part.lower() for part in item[2].parts}
+        return "low_score" not in parts
+
+    def is_strong_symbol_paytable(item):
+        score, _idx, _path, reasons = item
+        reason_text = " ".join(str(r) for r in (reasons or []))
+        has_title = "symbol_payout_title" in reason_text or "paytable_word" in reason_text
+        has_symbols = "wild_scatter_terms" in reason_text or "multiplier_symbols" in reason_text
+        has_values = (
+            "many_numbers" in reason_text
+            or "payout_pairs" in reason_text
+            or "full_values" in reason_text
+        )
+        return score >= 9.5 and has_title and has_symbols and has_values
+
+    def is_strong_secondary_paytable(item):
+        # low_score is valuable as a fallback, but it also contains transition
+        # overlays and webpage fragments.  Require an explicit Paytable label
+        # so PP rule pages such as "symbols pay anywhere" do not flood output.
+        score, _idx, _path, reasons = item
+        reason_text = " ".join(str(r) for r in (reasons or []))
+        return (
+            score >= 9.5
+            and "paytable_word" in reason_text
+            and ("wild_scatter_terms" in reason_text or "multiplier_symbols" in reason_text)
+            and (
+                "many_numbers" in reason_text
+                or "payout_pairs" in reason_text
+                or "full_values" in reason_text
+            )
+        )
+
+    def sample_sequence(items, limit):
+        if limit <= 0 or not items:
+            return []
+        items = sorted(items, key=lambda item: item[1])
+        if len(items) <= limit:
+            return list(items)
         # Paytables often appear as a scroll sequence. Taking only the highest
         # scores over-selects repeated top pages and can miss later low-card
         # pages (Q/J/10/9). Sample across the whole detected sequence instead.
-        step = (len(scored) - 1) / float(page_limit - 1) if page_limit > 1 else 1.0
-        indices = sorted(set(round(i * step) for i in range(page_limit)))
-        selected = [scored[i] for i in indices]
+        step = (len(items) - 1) / float(limit - 1) if limit > 1 else 1.0
+        indices = sorted(set(round(i * step) for i in range(limit)))
+        return [items[i] for i in indices]
+
+    def append_unique(target, items):
+        seen = {item[2].resolve() for item in target}
+        seen_names = {item[2].name for item in target}
+        for item in items:
+            path = item[2].resolve()
+            # Prefer the final Help copy for identical filenames, but do not let
+            # a low_score-only high-value paytable disappear from extraction.
+            if path in seen:
+                continue
+            if item[2].name in seen_names and not is_strong_symbol_paytable(item):
+                continue
+            target.append(item)
+            seen.add(path)
+            seen_names.add(item[2].name)
+
+    primary_scored = [item for item in scored if is_primary_help_page(item)]
+    secondary_scored = [item for item in scored if not is_primary_help_page(item)]
+    selected = []
+
+    # Keep a chronological backbone from primary Help when available.
+    primary_limit = page_limit if primary_scored else 0
+    append_unique(selected, sample_sequence(primary_scored, primary_limit))
+
+    # Strong symbol-paytable pages should be preserved even when they live in
+    # low_score/Help or when sequence sampling would otherwise skip them.
+    strong_pages = sorted(
+        [item for item in secondary_scored if is_strong_secondary_paytable(item)],
+        key=lambda item: (-item[0], item[1]),
+    )
+    append_unique(selected, strong_pages[: max(4, page_limit // 4)])
+
+    if not selected:
+        append_unique(selected, sample_sequence(scored, page_limit))
+
+    selected = sorted(selected, key=lambda item: item[1])[:page_limit]
     return [p for _score, _idx, p, _reasons in selected]
 
 
