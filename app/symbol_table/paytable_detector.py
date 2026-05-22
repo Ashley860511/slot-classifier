@@ -233,6 +233,15 @@ def paytable_score_from_cv(dialog_img, detect_icon_components_in_dialog=None) ->
     return score, reasons
 
 
+def _icon_component_count_from_reasons(reasons: list[str]) -> int:
+    """Extract the local CV icon-count signal from paytable scan reasons."""
+    for reason in reasons or []:
+        m = re.search(r"(?:some_)?icon_components:(\d+)", str(reason))
+        if m:
+            return int(m.group(1))
+    return 0
+
+
 def is_local_paytable_page(
     img_path: Path,
     ocr_engine=None,
@@ -249,7 +258,17 @@ def is_local_paytable_page(
     source = dialog_img if dialog_img is not None else Image.open(img_path)
 
     cv_score, cv_reasons = paytable_score_from_cv(source, detect_icon_components_in_dialog)
-    if cv_score < PAYTABLE_CV_PREFILTER_MIN_SCORE:
+    should_scan_symbol_explanation = (
+        cv_score >= 1.6
+        and "yellow_payout_text" in cv_reasons
+        and any(str(reason).startswith("dark_help_bg") for reason in cv_reasons)
+    )
+    should_scan_sparse_table = (
+        cv_score >= 0.5
+        and any(str(reason).startswith("some_icon_components") for reason in cv_reasons)
+        and any(str(reason).startswith("dark_help_bg") for reason in cv_reasons)
+    )
+    if cv_score < PAYTABLE_CV_PREFILTER_MIN_SCORE and not (should_scan_symbol_explanation or should_scan_sparse_table):
         reasons = [f"cv_prefilter_skip:{cv_score:.1f}"] + cv_reasons
         if debug_dir:
             safe_save_debug_image(source, debug_dir / f"cv_skip_{img_path.stem}.jpg", format="JPEG", quality=88)
@@ -282,14 +301,28 @@ def is_local_paytable_page(
         "symbols pay anywhere", "symbols pay", "same symbol",
     ])
     has_multiplier_symbols = any(term in joined for term in ["multiplier symbol", "multiplier symbols"])
+    has_symbol_terms = any(reason in ocr_reasons for reason in ("wild_scatter_terms", "multiplier_symbols"))
+    has_yellow_symbol_text = any(reason == "yellow_payout_text" for reason in cv_reasons)
     has_paytable_word = bool(re.search(r"\bpay\s*table\b|\bpaytable\b", joined))
+    has_values = any(
+        str(reason).startswith(("many_numbers", "payout_pairs", "full_values"))
+        for reason in ocr_reasons
+    )
+    icon_component_count = _icon_component_count_from_reasons(cv_reasons)
     ok = (
         not has_buy_modal
-        and not (has_game_rules and not (has_symbol_payout_title or has_multiplier_symbols) and cv_score < 4.0)
+        and not (
+            has_game_rules
+            and not (has_symbol_payout_title or has_multiplier_symbols or has_paytable_word)
+            and cv_score < 4.0
+        )
         and (
             (has_symbol_payout_title and total >= 5.5)
             or (has_multiplier_symbols and total >= 4.8)
             or (has_paytable_word and ocr_score >= 4.0 and cv_score >= 3.0 and total >= 7.0)
+            or (has_paytable_word and has_values and icon_component_count >= 8 and total >= 5.5)
+            or (has_paytable_word and has_values and icon_component_count >= 4 and total >= 4.3)
+            or (has_paytable_word and has_symbol_terms and has_yellow_symbol_text and total >= 4.0)
             or (ocr_score >= 4.0 and cv_score >= 3.0 and total >= 7.0)
         )
     )
@@ -365,15 +398,25 @@ def find_paytable_pages_local(
         # so PP rule pages such as "symbols pay anywhere" do not flood output.
         score, _idx, _path, reasons = item
         reason_text = " ".join(str(r) for r in (reasons or []))
+        icon_component_count = _icon_component_count_from_reasons(reasons)
+        has_values = (
+            "many_numbers" in reason_text
+            or "payout_pairs" in reason_text
+            or "full_values" in reason_text
+        )
+        is_symbol_explanation = (
+            "wild_scatter_terms" in reason_text
+            and "yellow_payout_text" in reason_text
+        )
         return (
-            score >= 9.5
+            score >= 4.0
             and "paytable_word" in reason_text
-            and ("wild_scatter_terms" in reason_text or "multiplier_symbols" in reason_text)
             and (
-                "many_numbers" in reason_text
-                or "payout_pairs" in reason_text
-                or "full_values" in reason_text
+                "wild_scatter_terms" in reason_text
+                or "multiplier_symbols" in reason_text
+                or icon_component_count >= 4
             )
+            and (has_values or is_symbol_explanation)
         )
 
     def sample_sequence(items, limit):
@@ -408,17 +451,20 @@ def find_paytable_pages_local(
     secondary_scored = [item for item in scored if not is_primary_help_page(item)]
     selected = []
 
-    # Keep a chronological backbone from primary Help when available.
-    primary_limit = page_limit if primary_scored else 0
-    append_unique(selected, sample_sequence(primary_scored, primary_limit))
-
     # Strong symbol-paytable pages should be preserved even when they live in
     # low_score/Help or when sequence sampling would otherwise skip them.
     strong_pages = sorted(
         [item for item in secondary_scored if is_strong_secondary_paytable(item)],
-        key=lambda item: (-item[0], item[1]),
+        key=lambda item: item[1],
     )
-    append_unique(selected, strong_pages[: max(4, page_limit // 4)])
+    secondary_limit = min(len(strong_pages), max(8, page_limit // 3)) if strong_pages else 0
+
+    # Keep a chronological backbone from primary Help when available, but reserve
+    # space for low_score paytable pages.  Otherwise final Help can occupy the
+    # full cap and the fallback pages are scanned but discarded.
+    primary_limit = max(0, page_limit - secondary_limit) if primary_scored else 0
+    append_unique(selected, sample_sequence(primary_scored, primary_limit))
+    append_unique(selected, sample_sequence(strong_pages, secondary_limit))
 
     if not selected:
         append_unique(selected, sample_sequence(scored, page_limit))

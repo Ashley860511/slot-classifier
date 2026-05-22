@@ -385,8 +385,14 @@ def auto_detect_game_area(video_path, debug_dir=None):
     motion_aspect_ratio = mw / float(max(1, mh))
     motion_is_landscape_game = (
         motion_width_ratio >= AUTO_ROI_LANDSCAPE_MIN_WIDTH_RATIO
-        and motion_height_ratio <= AUTO_ROI_LANDSCAPE_MAX_HEIGHT_RATIO
         and motion_aspect_ratio >= 1.15
+        and (
+            motion_height_ratio <= AUTO_ROI_LANDSCAPE_MAX_HEIGHT_RATIO
+            or (
+                motion_width_ratio >= 0.55
+                and motion_height_ratio <= 0.86
+            )
+        )
     )
     motion_is_portrait_game = (
         AUTO_ROI_USE_MOTION_BBOX_FOR_PORTRAIT
