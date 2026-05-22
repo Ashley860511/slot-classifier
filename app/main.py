@@ -18,6 +18,7 @@ try:
         DEFAULT_ROI_Y,
         INPUT_DIR,
         OUTPUT_DIR,
+        WEB_HELP_FULL_PAGE_MIN_ASPECT,
     )
 except ImportError:
     from config import (
@@ -29,6 +30,7 @@ except ImportError:
         DEFAULT_ROI_Y,
         INPUT_DIR,
         OUTPUT_DIR,
+        WEB_HELP_FULL_PAGE_MIN_ASPECT,
     )
 
 try:
@@ -1454,6 +1456,8 @@ def help_paytable_signal_score(ocr_items=None):
         return 3.0
     if paytable_title and numeric_value_count >= 8 and symbol_table_terms >= 1:
         return 2.5
+    if paytable_title and numeric_value_count >= 12:
+        return 2.5
     if paytable_title and numeric_item_count >= 20 and symbol_table_terms >= 3:
         return 3.0
     if paytable_title and numeric_item_count >= 10 and symbol_table_terms >= 10:
@@ -1588,6 +1592,37 @@ def help_page_quality_score(img, ocr_items=None):
         reasons.append(f"bright_non_help_penalty:{bright_ratio:.2f}")
 
     return round(score, 2), reasons
+
+
+def has_help_scroll_shell(img):
+    if img is None or img.size == 0:
+        return False
+
+    h, w = img.shape[:2]
+    if h <= 0 or w <= 0:
+        return False
+
+    center = img[int(h * 0.05):int(h * 0.92), int(w * 0.28):int(w * 0.72)]
+    bottom = img[int(h * 0.86):int(h * 0.99), int(w * 0.28):int(w * 0.72)]
+    if center.size == 0 or bottom.size == 0:
+        return False
+
+    center_hsv = cv2.cvtColor(center, cv2.COLOR_BGR2HSV)
+    bottom_hsv = cv2.cvtColor(bottom, cv2.COLOR_BGR2HSV)
+    center_sat = center_hsv[:, :, 1]
+    center_val = center_hsv[:, :, 2]
+    bottom_sat = bottom_hsv[:, :, 1]
+    bottom_val = bottom_hsv[:, :, 2]
+
+    dark_panel_ratio = float(np.mean((center_val <= 85) & (center_sat <= 110)))
+    dark_bottom_ratio = float(np.mean((bottom_val <= 95) & (bottom_sat <= 115)))
+    bright_button_ratio = float(np.mean((bottom_val >= 120) & (bottom_sat >= 80)))
+
+    return (
+        dark_panel_ratio >= 0.62
+        and dark_bottom_ratio >= 0.48
+        and bright_button_ratio >= 0.015
+    )
 
 
 def feature_board_obstruction_score(img):
@@ -1743,6 +1778,13 @@ def has_loading_splash_signal(img, ocr_items=None):
         return True
 
     compact = joined.replace(" ", "")
+    has_jackpot_pick_screen = (
+        has_any(joined, ["jackpot", "grand", "major", "minor", "mini"])
+        and has_any(joined, ["please select", "select one", "pick", "choose"])
+    )
+    if has_jackpot_pick_screen:
+        return False
+
     legal_or_vendor_terms = [
         "ver", "certified", "testlabs", "gaming", "institution", "regulations",
         "fair and just", "licensed", "license", "rights reserved", "pocket games soft",
@@ -1756,7 +1798,8 @@ def has_loading_splash_signal(img, ocr_items=None):
     # long horizontal progress bar, while real game screens have stronger UI words.
     has_real_game_ui = has_any(joined, [
         "balance", "total bets", "total bet", "buy feature", "feature buy",
-        "remaining", "total win", "collect",
+        "remaining", "total win", "collect", "jackpot", "grand", "major",
+        "minor", "mini", "please select",
     ])
     cover_terms = [
         "get started", "win up to", "up to", "score a goal", "free games",
@@ -2701,11 +2744,29 @@ def classify_frame(cropped, ocr_items, roi_w, roi_h):
         category_scores["Other"] = max(category_scores.get("Other", 0.0), 8.0)
         matched_keywords.setdefault("Other", []).append("brand_logo_splash")
 
+    jackpot_pick_feature = (
+        feature_subtype == "pick"
+        and feature_board_score >= 3.0
+        and has_any(joined, ["jackpot", "grand", "major", "minor", "mini"])
+        and has_any(joined, ["please select", "select one", "pick", "choose"])
+        and not has_help_page
+        and not has_rules_help_page
+    )
+    if jackpot_pick_feature:
+        category = "Feature game"
+        top_score = max(top_score, feature_board_score, 12.0)
+        category_scores["Feature game"] = max(category_scores.get("Feature game", 0.0), 12.0)
+        category_scores["loading"] = min(category_scores.get("loading", 0.0), 2.0)
+        matched_keywords.setdefault("Feature game", []).append(
+            f"jackpot_pick_bonus:{feature_board_score:.2f}"
+        )
+
     if (
         (has_loading_splash or has_loading_cover_text)
         and not has_transition_cover_text
         and not has_feature_buy_modal
         and not has_bigwin_overlay
+        and not jackpot_pick_feature
     ):
         category = "loading"
         top_score = max(top_score, 12.0)
@@ -4354,6 +4415,27 @@ def process_video(video_path, ocr_engine, video_output_dir, csv_path):
                         or has_help_signal(web_joined, web_ocr_items, hw, hh)
                         or web_rules_help_like
                     )
+                    force_web_help_crop = (
+                        w > 0
+                        and h > 0
+                        and (w / float(max(1, h))) <= 0.85
+                        and (frame.shape[1] / float(max(1, frame.shape[0]))) >= WEB_HELP_FULL_PAGE_MIN_ASPECT
+                        and (
+                            help_quality_score >= 8.0
+                            or help_paytable_score >= 2.0
+                            or has_help_signal(
+                                " ".join(
+                                    normalize_text(text)
+                                    for _, text, ocr_score in (ocr_items or [])
+                                    if ocr_score >= SCORE_THRESHOLD
+                                ),
+                                ocr_items,
+                                w,
+                                h,
+                            )
+                        )
+                        and web_help_quality_score >= 2.0
+                    )
                     web_false_result_from_rules = (
                         web_category == "Result"
                         and web_rules_help_like
@@ -4361,10 +4443,11 @@ def process_video(video_path, ocr_engine, video_output_dir, csv_path):
                     )
 
                     if (
-                        web_help_like
+                        (web_help_like or force_web_help_crop)
                         and (
                             web_category not in ["Feature Buy", "BigWin", "Result", "loading"]
                             or web_false_result_from_rules
+                            or force_web_help_crop
                         )
                     ):
                         x, y, w, h = hx, hy, hw, hh
@@ -4402,6 +4485,12 @@ def process_video(video_path, ocr_engine, video_output_dir, csv_path):
                 frame_idx + HELP_DENSE_SAMPLE_AFTER_FRAMES,
             )
             matched_keywords.setdefault("Help", []).append("help_dense_sampling_active")
+        elif has_help_scroll_shell(cropped) and help_quality_score >= 3.0:
+            help_dense_until_frame = max(
+                help_dense_until_frame,
+                frame_idx + HELP_DENSE_SAMPLE_AFTER_FRAMES,
+            )
+            matched_keywords.setdefault(category, []).append("help_shell_dense_probe")
         if category == "Transition":
             transition_dense_until_frame = max(
                 transition_dense_until_frame,
