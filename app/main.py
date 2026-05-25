@@ -4248,7 +4248,7 @@ def keep_selected_images(saved_records, low_score_dir=None):
 # =========================
 # 主流程
 # =========================
-def process_video(video_path, ocr_engine, video_output_dir, csv_path):
+def process_video(video_path, ocr_engine, video_output_dir, csv_path, progress_callback=None):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     video_file_prefix = safe_short_name(video_name, max_len=36)
     video_debug_dir = os.path.join(video_output_dir, "_debug")
@@ -4269,6 +4269,33 @@ def process_video(video_path, ocr_engine, video_output_dir, csv_path):
         print(f"無法開啟影片: {video_path}")
         return []
 
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    last_progress_frame = -1
+
+    def notify_video_progress(current_frame, stage="classify"):
+        nonlocal last_progress_frame
+        if not progress_callback:
+            return
+        if (
+            current_frame != 0
+            and total_frames > 0
+            and current_frame < total_frames - 1
+            and current_frame - last_progress_frame < max(30, FRAME_INTERVAL * 4)
+        ):
+            return
+        last_progress_frame = current_frame
+        progress_callback({
+            "stage": stage,
+            "video": video_name,
+            "frame": int(max(0, current_frame)),
+            "total_frames": int(max(0, total_frames)),
+            "video_progress": (
+                min(1.0, max(0.0, current_frame / float(total_frames)))
+                if total_frames > 0 else 0.0
+            ),
+            "output_dir": video_output_dir,
+        })
+
     frame_idx = 0
     saved_count = 0
     last_sampled_roi = None
@@ -4279,6 +4306,7 @@ def process_video(video_path, ocr_engine, video_output_dir, csv_path):
     saved_records = []
 
     while True:
+        notify_video_progress(frame_idx)
         ret, frame = cap.read()
         if not ret:
             print(f"[{video_name}] 影片讀取結束。")
@@ -4618,6 +4646,7 @@ def process_video(video_path, ocr_engine, video_output_dir, csv_path):
         frame_idx += 1
 
     cap.release()
+    notify_video_progress(total_frames or frame_idx, stage="classify_done")
     print(f"[{video_name}] 完成，總共儲存 {saved_count} 張圖")
     return saved_records
 
@@ -4635,6 +4664,137 @@ def generate_symbols_for_output(video_output_dir, debug=False):
         debug=debug,
         icons_only=True,
     )
+
+
+def get_video_output_dir_for_root(video_path, output_root):
+    video_name = os.path.splitext(os.path.basename(video_path))[0]
+    return os.path.join(output_root, safe_short_name(video_name, max_len=52))
+
+
+def run_classifier(
+    video_paths=None,
+    video_id=None,
+    output_root=OUTPUT_DIR,
+    skip_symbols=False,
+    symbol_debug=False,
+    progress_callback=None,
+):
+    def notify(stage, message, current=0, total=0, output_dir=None, percent=None):
+        if progress_callback:
+            progress_callback({
+                "stage": stage,
+                "message": message,
+                "current": current,
+                "total": total,
+                "output_dir": output_dir,
+                "percent": percent,
+            })
+
+    os.makedirs(output_root, exist_ok=True)
+
+    if video_paths is None:
+        video_list = get_video_list()
+    else:
+        video_list = [str(path) for path in video_paths]
+
+    if video_id:
+        target = str(video_id).strip()
+        video_list = [
+            path for path in video_list
+            if os.path.splitext(os.path.basename(path))[0] == target
+        ]
+
+    if not video_list:
+        notify("error", f"No videos found. Put video files in: {INPUT_DIR}")
+        return []
+
+    notify("ocr", "Initializing OCR...", 0, len(video_list), percent=0.0)
+    ocr_engine = init_ocr(OCR_LANG)
+    print("OCR initialized.")
+    print(f"Found {len(video_list)} video(s).")
+
+    outputs = []
+    total = len(video_list)
+    for index, video_path in enumerate(video_list, start=1):
+        if not os.path.exists(video_path):
+            print(f"Video not found: {video_path}")
+            notify("missing", f"Video not found: {video_path}", index, total)
+            continue
+
+        video_output_dir = get_video_output_dir_for_root(video_path, output_root)
+        video_csv_path = get_video_csv_path(video_output_dir)
+        prepare_output_dirs(video_output_dir)
+        write_csv_header(video_csv_path)
+
+        print(f"\n=== Processing: {os.path.basename(video_path)} ===")
+        print(f"Output folder: {video_output_dir}")
+        video_base = ((index - 1) / float(max(1, total))) * 100.0
+        video_span = (1.0 / float(max(1, total))) * 100.0
+
+        notify(
+            "classify",
+            f"Classifying {os.path.basename(video_path)}",
+            index,
+            total,
+            video_output_dir,
+            percent=video_base,
+        )
+
+        def video_progress_callback(event):
+            video_progress = float(event.get("video_progress", 0.0) or 0.0)
+            percent = video_base + video_span * min(0.88, video_progress * 0.88)
+            frame = int(event.get("frame", 0) or 0)
+            total_frames = int(event.get("total_frames", 0) or 0)
+            frame_text = (
+                f" frame {frame}/{total_frames}" if total_frames > 0 else ""
+            )
+            notify(
+                event.get("stage", "classify"),
+                f"Classifying {os.path.basename(video_path)}{frame_text}",
+                index,
+                total,
+                video_output_dir,
+                percent=percent,
+            )
+
+        records = process_video(
+            video_path,
+            ocr_engine,
+            video_output_dir,
+            video_csv_path,
+            progress_callback=video_progress_callback,
+        )
+
+        notify(
+            "filter",
+            f"Selecting final images for {os.path.basename(video_path)}",
+            index,
+            total,
+            video_output_dir,
+            percent=video_base + video_span * 0.90,
+        )
+        keep_selected_images(records, low_score_dir=os.path.join(video_output_dir, "low_score"))
+        print(f"CSV saved: {video_csv_path}")
+
+        if not skip_symbols:
+            notify(
+                "symbols",
+                f"Generating symbols for {os.path.basename(video_path)}",
+                index,
+                total,
+                video_output_dir,
+                percent=video_base + video_span * 0.94,
+            )
+            print("Generating symbol images...")
+            generate_symbols_for_output(video_output_dir, debug=symbol_debug)
+            print(f"Symbols saved: {os.path.join(video_output_dir, 'symbol_table', 'symbols')}")
+
+        outputs.append(video_output_dir)
+
+    notify("done", f"Done. Output root: {output_root}", total, total, percent=100.0)
+    print(f"Output root: {output_root}")
+    print("Done.")
+    return outputs
 
 
 def main():
@@ -4666,8 +4826,6 @@ def main():
     )
     args = parser.parse_args()
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
     video_list = get_video_list()
     if not video_list:
         print(f"No videos found. Put video files in: {INPUT_DIR}")
@@ -4684,33 +4842,12 @@ def main():
             print(f"No video found with id '{target}' in {INPUT_DIR}")
             return
 
-    ocr_engine = init_ocr(OCR_LANG)
-    print("OCR initialized.")
-    print(f"Found {len(video_list)} video(s).")
-
-    for video_path in video_list:
-        if not os.path.exists(video_path):
-            print(f"Video not found: {video_path}")
-            continue
-
-        video_output_dir = get_video_output_dir(video_path)
-        video_csv_path = get_video_csv_path(video_output_dir)
-        prepare_output_dirs(video_output_dir)
-        write_csv_header(video_csv_path)
-
-        print(f"\n=== Processing: {os.path.basename(video_path)} ===")
-        print(f"Output folder: {video_output_dir}")
-
-        records = process_video(video_path, ocr_engine, video_output_dir, video_csv_path)
-        keep_selected_images(records, low_score_dir=os.path.join(video_output_dir, "low_score"))
-        print(f"CSV saved: {video_csv_path}")
-        if not args.skip_symbols:
-            print("Generating symbol images...")
-            generate_symbols_for_output(video_output_dir, debug=args.symbol_debug)
-            print(f"Symbols saved: {os.path.join(video_output_dir, 'symbol_table', 'symbols')}")
-
-    print(f"Output root: {OUTPUT_DIR}")
-    print("Done.")
+    run_classifier(
+        video_paths=video_list,
+        output_root=OUTPUT_DIR,
+        skip_symbols=args.skip_symbols,
+        symbol_debug=args.symbol_debug,
+    )
 
 if __name__ == "__main__":
     main()
