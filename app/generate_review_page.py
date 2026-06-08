@@ -307,7 +307,6 @@ def main():
         f.write(html)
 
     print(f"\n✅ 審核頁面已生成：{out_path}")
-    print(f"   在 Windows 用瀏覽器開啟：\\\\34.80.93.119\\data\\user\\ashleyli\\competitive-survey-worker\\.claude\\skills\\project\\output\\{video_name}\\review.html")
 
 
 if __name__ == "__main__":

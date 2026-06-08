@@ -23,7 +23,6 @@ python3.10 -m venv .venv
 |------|------|
 | `bash classify_with_roi_confirm.sh --video-id WildTrain` | 完整流程（含 ROI 人工確認） |
 | `bash run_classify_roi.sh --video-id WildTrain --roi x,y,w,h` | 直接指定 ROI 跑分類 |
-| `bash run_classify.sh --video-id WildTrain` | 全自動（跳過 ROI 確認） |
 | `python app/generate_review_page.py project/output/WildTrain` | 單獨生成審核頁 |
 
 ---
