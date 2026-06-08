@@ -672,9 +672,22 @@ def _final_quality_rank(rec: dict[str, Any]) -> tuple[float, float, float, str]:
 
 
 def _dhash(img) -> int:
-    """Small perceptual hash used to group repeated crops of the same icon."""
+    """Small perceptual hash used to group repeated crops of the same icon.
+
+    Center-crops 20% of each edge before hashing so the hash reflects the
+    symbol content rather than tile borders or background padding.  This
+    prevents white-background mahjong tiles (發、中、白板、八萬…) from being
+    collapsed into the same group just because their borders look identical.
+    """
     if Image is None:
         return 0
+    w, h = img.size
+    cx0 = int(w * 0.20)
+    cy0 = int(h * 0.20)
+    cx1 = w - cx0
+    cy1 = h - cy0
+    if cx1 > cx0 and cy1 > cy0:
+        img = img.crop((cx0, cy0, cx1, cy1))
     gray = img.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
     px = list(gray.getdata())
     bits = 0
@@ -702,11 +715,16 @@ def _icons_visually_same(path_a: str, path_b: str) -> bool:
             b = img_b.convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
         import numpy as np
 
+        # Compare only the center 60% to focus on symbol content, not borders
         arr_a = np.array(a, dtype=np.float32)
         arr_b = np.array(b, dtype=np.float32)
+        s = 64
+        c0, c1 = int(s * 0.20), int(s * 0.80)
+        arr_a = arr_a[c0:c1, c0:c1]
+        arr_b = arr_b[c0:c1, c0:c1]
         rgb_diff = float(np.mean(np.abs(arr_a[:, :, :3] - arr_b[:, :, :3])) / 255.0)
         alpha_diff = float(np.mean(np.abs(arr_a[:, :, 3] - arr_b[:, :, 3])) / 255.0)
-        return rgb_diff <= 0.065 and alpha_diff <= 0.018
+        return rgb_diff <= 0.055 and alpha_diff <= 0.018
     except Exception:
         return False
 
@@ -1002,7 +1020,7 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
         matched = None
         for group in groups:
             if (
-                _hamming(rec_hash, int(group["hash"], 16)) <= 8
+                _hamming(rec_hash, int(group["hash"], 16)) <= 5
                 and _records_visually_same(rec, group["best"])
             ):
                 matched = group

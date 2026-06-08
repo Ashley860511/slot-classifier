@@ -226,7 +226,11 @@ def paytable_score_from_cv(dialog_img, detect_icon_components_in_dialog=None) ->
 
     light_text = (val > 135) & (sat < 80)
     paragraph_rows = int(np.sum(light_text.mean(axis=1) > 0.16))
-    if paragraph_rows >= max(24, int(dialog_img.height * 0.10)) and yellow_ratio < 0.020:
+    # Only penalise pages that look like pure-text rule pages.  Paytable image
+    # pages (white mahjong tiles, card symbols) also have many light rows but
+    # they contain icon components — skip the penalty when icons are present.
+    has_icon_components = len(plausible_boxes) >= 3
+    if paragraph_rows >= max(24, int(dialog_img.height * 0.10)) and yellow_ratio < 0.020 and not has_icon_components:
         score -= 2.0
         reasons.append("paragraph_rules_layout")
 
@@ -324,6 +328,9 @@ def is_local_paytable_page(
             or (has_paytable_word and has_values and icon_component_count >= 4 and total >= 4.3)
             or (has_paytable_word and has_symbol_terms and has_yellow_symbol_text and total >= 4.0)
             or (ocr_score >= 4.0 and cv_score >= 3.0 and total >= 7.0)
+            # Scrolled paytable pages: title has scrolled off, only symbol images remain.
+            # The tile/icon detector may find as few as 4 visible symbols per frame.
+            or (icon_component_count >= 4 and cv_score >= 4.0 and not has_game_rules)
         )
     )
 
@@ -408,7 +415,8 @@ def find_paytable_pages_local(
             "wild_scatter_terms" in reason_text
             and "yellow_payout_text" in reason_text
         )
-        return (
+        # Standard path: has a "PAYTABLE" / "SYMBOL PAYOUT" title word
+        standard = (
             score >= 4.0
             and "paytable_word" in reason_text
             and (
@@ -418,6 +426,15 @@ def find_paytable_pages_local(
             )
             and (has_values or is_symbol_explanation)
         )
+        # Scrolled paytable pages: title already scrolled off, only icons+numbers visible.
+        # Require many icon components + payout-style numbers as strong evidence.
+        scrolled_paytable = (
+            score >= 3.0
+            and icon_component_count >= 4
+            and has_values
+            and "paytable_word" not in reason_text
+        )
+        return standard or scrolled_paytable
 
     def sample_sequence(items, limit):
         if limit <= 0 or not items:

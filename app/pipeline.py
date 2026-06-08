@@ -428,13 +428,19 @@ def process_video(video_path, ocr_engine, video_output_dir, csv_path, progress_c
                         or has_help_signal(web_joined, web_ocr_items, hw, hh)
                         or web_rules_help_like
                     )
+                    _roi_is_portrait = w > 0 and h > 0 and (w / float(max(1, h))) <= 0.85
+                    _frame_is_landscape = (frame.shape[1] / float(max(1, frame.shape[0]))) >= WEB_HELP_FULL_PAGE_MIN_ASPECT
+                    # If the classifier already decided this is Help AND the ROI is a narrow
+                    # portrait strip inside a landscape frame, trust the classification and
+                    # always use the full-page crop — no secondary signal check needed.
+                    # This fixes paytable-image pages that have few OCR keywords.
+                    _help_already_classified = (category == "Help" and _roi_is_portrait and _frame_is_landscape)
                     force_web_help_crop = (
-                        w > 0
-                        and h > 0
-                        and (w / float(max(1, h))) <= 0.85
-                        and (frame.shape[1] / float(max(1, frame.shape[0]))) >= WEB_HELP_FULL_PAGE_MIN_ASPECT
+                        _roi_is_portrait
+                        and _frame_is_landscape
                         and (
-                            help_quality_score >= 8.0
+                            _help_already_classified
+                            or help_quality_score >= 8.0
                             or help_paytable_score >= 2.0
                             or has_help_signal(
                                 " ".join(

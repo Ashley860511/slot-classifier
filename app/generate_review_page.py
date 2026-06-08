@@ -478,7 +478,7 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"\n✅ 審核頁面已生成：{out_path}")
+    print(f"\n[OK] 審核頁面已生成：{out_path}")
 
 
 if __name__ == "__main__":
