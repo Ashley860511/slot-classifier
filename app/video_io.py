@@ -108,7 +108,7 @@ def write_csv_header(csv_path):
             writer.writerow([
                 "video_name", "frame_idx", "final_category", "diff_score",
                 "blur_score", "top_score", "feature_subtype", "feature_subtype_scores",
-                "ocr_items", "category_scores", "matched_keywords", "roi", "save_path",
+                "raw_texts", "category_scores", "matched_keywords", "roi", "save_path",
                 "confidence_level", "confidence_score",
             ])
 

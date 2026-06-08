@@ -98,6 +98,14 @@ if [ $EXIT_CODE -eq 0 ]; then
         "$VENV_PYTHON" "$SCRIPT_DIR/app/generate_review_page.py" "$OUTPUT_DIR" 2>/dev/null || true
         echo "✅ 完成：$OUTPUT_DIR/review.html"
     fi
+
+    # ── 啟動本機審核 Server ──────────────────────────────────
+    echo ""
+    echo "► 啟動審核 Server（http://localhost:8765）..."
+    echo "  在瀏覽器開啟上方網址即可進行人工修正"
+    echo "  完成後按 Ctrl+C 停止"
+    echo ""
+    "$VENV_PYTHON" "$SCRIPT_DIR/review_server.py" --video-id "$VIDEO_ID"
 fi
 
 exit $EXIT_CODE
