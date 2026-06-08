@@ -58,13 +58,11 @@ bash classify_with_roi_confirm.sh --video-id {VIDEO_ID}
 bash classify_with_roi_confirm.sh --video-id {VIDEO_ID} --roi {x,y,w,h}
 ```
 
-### 步驟 5 — 生成審核頁與 Symbol 提取
+### 步驟 5 — 生成審核頁
 ```bash
 # 生成截圖審核頁（含 Symbol Review 區塊）
+# Symbol 提取已由 pipeline.py 在分類時自動完成，無需另外執行
 python app/generate_review_page.py project/output/{VIDEO_ID}
-
-# 提取 Symbol（從 Help 頁自動裁切）
-python app/generate_symbol_table.py --video-id {VIDEO_ID} --no-ai --icons-only
 ```
 
 ### 步驟 6 — 告知用戶開啟審核頁
