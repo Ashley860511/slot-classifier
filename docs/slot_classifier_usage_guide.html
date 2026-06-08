@@ -47,28 +47,15 @@
       margin: 0 0 10px;
       font-size: clamp(30px, 4vw, 44px);
       line-height: 1.18;
-      letter-spacing: 0;
     }
 
-    h2 {
-      margin: 0 0 14px;
-      font-size: 24px;
-      line-height: 1.35;
-    }
-
-    h3 {
-      margin: 22px 0 8px;
-      font-size: 18px;
-    }
+    h2 { margin: 0 0 14px; font-size: 24px; line-height: 1.35; }
+    h3 { margin: 22px 0 8px; font-size: 18px; }
 
     p { margin: 0 0 12px; color: var(--muted); }
     strong { color: var(--text); }
 
-    a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
+    a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
     section {
@@ -79,12 +66,7 @@
       border-radius: 8px;
     }
 
-    ul, ol {
-      margin: 10px 0 0 22px;
-      padding: 0;
-      color: var(--muted);
-    }
-
+    ul, ol { margin: 10px 0 0 22px; padding: 0; color: var(--muted); }
     li { margin: 7px 0; }
 
     code {
@@ -106,11 +88,7 @@
       line-height: 1.5;
     }
 
-    pre code {
-      padding: 0;
-      background: transparent;
-      color: inherit;
-    }
+    pre code { padding: 0; background: transparent; color: inherit; }
 
     table {
       width: 100%;
@@ -126,15 +104,9 @@
       border: 1px solid var(--line);
     }
 
-    th {
-      background: #eef2f7;
-      color: var(--text);
-    }
+    th { background: #eef2f7; color: var(--text); }
 
-    .lead {
-      max-width: 900px;
-      font-size: 17px;
-    }
+    .lead { max-width: 900px; font-size: 17px; }
 
     .meta {
       display: flex;
@@ -197,19 +169,31 @@
       color: var(--accent-strong);
     }
 
-    .warning {
-      border-color: #fed7aa;
-      background: var(--warn-soft);
-      color: var(--warn);
+    .warning { border-color: #fed7aa; background: var(--warn-soft); color: var(--warn); }
+    .success { border-color: #bbf7d0; background: var(--ok-soft); color: var(--ok); }
+
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      flex-shrink: 0;
+      margin-right: 10px;
     }
 
-    .success {
-      border-color: #bbf7d0;
-      background: var(--ok-soft);
-      color: var(--ok);
+    .step {
+      display: flex;
+      align-items: flex-start;
+      margin: 14px 0;
     }
 
-    .path { word-break: break-all; }
+    .step-body { flex: 1; }
 
     @media (max-width: 860px) {
       main { width: min(100vw - 24px, 1120px); padding-top: 20px; }
@@ -224,288 +208,378 @@
   <header>
     <h1>Slot 遊戲分類器使用說明</h1>
     <p class="lead">
-      這份文件整理目前 <strong>slot_classifier_figma_share_package</strong> 的日常使用方式：如何準備 Python 環境、放入影片、執行分類、查看輸出、產生 symbol 圖，以及匯出 Figma / FigJam 研究看板素材。
+      這份文件說明如何用 <strong>Claude Code</strong> 串聯完整競品截圖分類流程：從放入影片、自動截圖、ROI 人工確認、分類，到瀏覽器人工審核修正。
     </p>
     <div class="meta">
-      <span class="pill">更新日期：2026-05-15</span>
-      <span class="pill">適用 Windows</span>
-      <span class="pill">Python 3.10 建議</span>
-      <span class="pill">OpenCV + PaddleOCR</span>
-      <span class="pill">分類 + Symbol 裁切 + Figma 匯出</span>
+      <span class="pill">更新日期：2026-06-08</span>
+      <span class="pill">分支：perf/cpu-optimize-ocr</span>
+      <span class="pill">Python 3.10</span>
+      <span class="pill">Claude Code CLI</span>
+      <span class="pill">CPU-only PaddleOCR</span>
     </div>
     <nav class="toc" aria-label="目錄">
       <a href="#quick-start">最快使用流程</a>
       <a href="#folder">資料夾用途</a>
-      <a href="#environment">環境安裝</a>
-      <a href="#classification">執行分類</a>
-      <a href="#outputs">輸出結果</a>
-      <a href="#symbols">Symbol 圖輸出</a>
-      <a href="#figma">Figma 匯出</a>
+      <a href="#claude-workflow">Claude 串聯流程</a>
+      <a href="#roi">ROI 確認說明</a>
+      <a href="#review">人工審核操作</a>
+      <a href="#outputs">輸出結果說明</a>
+      <a href="#manual">手動執行指令</a>
       <a href="#troubleshooting">常見問題</a>
-      <a href="#references">參考文件</a>
     </nav>
   </header>
 
+  <!-- ① 最快使用流程 -->
   <section id="quick-start">
     <h2>最快使用流程</h2>
-    <ol>
-      <li>把影片放進 <code>project\input_videos</code>。</li>
-      <li>第一次使用先執行 <code>setup_venv.ps1</code> 安裝 Python 套件。</li>
-      <li>用 <code>check_environment.ps1</code> 確認環境可用。</li>
-      <li>雙擊 <code>run_classify_and_symbols.bat</code>，或在 PowerShell 執行它。</li>
-      <li>到 <code>project\output</code> 查看每支影片的分類截圖、CSV 和 symbol 輸出。</li>
-      <li>需要 Figma / FigJam 看板時，再執行 <code>run_figma_export.ps1</code>。</li>
-    </ol>
+    <div class="step">
+      <span class="step-num">1</span>
+      <div class="step-body">
+        <strong>把影片放入 <code>project/input_videos/</code></strong>
+        <p>支援 <code>.mp4</code>。影片名稱即為輸出資料夾名稱，建議用英文。</p>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step-num">2</span>
+      <div class="step-body">
+        <strong>在專案根目錄啟動 Claude Code</strong>
+        <pre><code>claude</code></pre>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step-num">3</span>
+      <div class="step-body">
+        <strong>告訴 Claude 開始分析</strong>
+        <pre><code>幫我分析 WildTrain</code></pre>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step-num">4</span>
+      <div class="step-body">
+        <strong>在瀏覽器確認 ROI 邊框</strong>
+        <p>Claude 給你連結後，用瀏覽器確認遊戲畫面邊框是否對齊，並回覆確認。</p>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step-num">5</span>
+      <div class="step-body">
+        <strong>等待分類完成 → 在瀏覽器開 <code>http://localhost:8765</code> 進行人工審核</strong>
+        <p>分類完成後 review server 自動啟動，對中低信心截圖進行複審，完成後按 Ctrl+C。</p>
+      </div>
+    </div>
     <div class="note success">
-      一般使用者建議優先用 <code>run_classify_and_symbols.bat</code>。它會用專案內的 <code>.venv</code> 執行 <code>app\main.py</code>，跑完後輸出會集中在 <code>project\output</code>。
+      一般使用以上流程即可。若需要進階控制（指定 ROI 座標、單跑某一步），參考後面「<a href="#manual">手動執行指令</a>」一節。
     </div>
   </section>
 
+  <!-- ② 資料夾用途 -->
   <section id="folder">
     <h2>資料夾用途</h2>
     <table>
       <thead>
-        <tr>
-          <th>位置</th>
-          <th>用途</th>
-        </tr>
+        <tr><th>位置</th><th>用途</th></tr>
       </thead>
       <tbody>
         <tr>
-          <td><code>app\main.py</code></td>
-          <td>主要分類器。讀取影片、擷取影格、OCR 判斷、分類截圖、挑選代表圖，並可接續處理 symbol 圖。</td>
+          <td><code>app/pipeline.py</code></td>
+          <td>核心分類流程：截圖、Auto ROI、OCR、scorers 評分、信心分數計算、CSV 寫入</td>
         </tr>
         <tr>
-          <td><code>app\generate_symbol_table.py</code></td>
-          <td>從 Help / Paytable 畫面偵測 symbol，輸出 symbol PNG、contact sheet 和 HTML 檢查頁。</td>
+          <td><code>app/scorers/</code></td>
+          <td>各類別評分模組（Basegame、BigWin、Feature、Help 等）+ 信心分數計算</td>
         </tr>
         <tr>
-          <td><code>project\input_videos</code></td>
-          <td>放入要分析的 slot 遊戲錄影。建議使用 <code>.mp4</code>。</td>
+          <td><code>app/generate_review_page.py</code></td>
+          <td>分類完成後生成 <code>review.html</code> 審核頁</td>
         </tr>
         <tr>
-          <td><code>project\output</code></td>
-          <td>分類器輸出位置。每支影片會有自己的資料夾，內含分類截圖、低分圖、CSV 和 symbol 結果。</td>
+          <td><code>app/generate_roi_preview.py</code></td>
+          <td>執行 Auto ROI 偵測，輸出互動式 <code>roi_adjust.html</code></td>
         </tr>
         <tr>
-          <td><code>figma_tools</code></td>
-          <td>Figma / FigJam 匯入工具，包含匯出 manifest 的 Python 腳本與 Figma Desktop plugin。</td>
+          <td><code>review_server.py</code></td>
+          <td>本機審核 Server（port 8765），讓 review.html 可以直接 POST 套用修正</td>
         </tr>
         <tr>
-          <td><code>figma_export</code></td>
-          <td>執行 Figma 匯出後產生的素材包，包含 <code>figma_manifest.json</code> 和代表截圖。</td>
+          <td><code>apply_corrections.py</code></td>
+          <td>接收 JSON 修正清單，移動截圖並更新 CSV</td>
         </tr>
         <tr>
-          <td><code>.venv</code></td>
-          <td>本專案專用 Python 環境。若環境壞掉，可以刪除後重新執行 <code>setup_venv.ps1</code>。</td>
+          <td><code>classify_with_roi_confirm.sh</code></td>
+          <td>主入口腳本：Auto ROI → 等待確認 → 分類 → 生成審核頁 → 啟動 Server</td>
+        </tr>
+        <tr>
+          <td><code>run_classify_roi.sh</code></td>
+          <td>直接帶 ROI 座標執行分類（跳過確認步驟）</td>
+        </tr>
+        <tr>
+          <td><code>project/input_videos/</code></td>
+          <td>放入要分析的影片 <code>.mp4</code></td>
+        </tr>
+        <tr>
+          <td><code>project/output/</code></td>
+          <td>每部影片的分類截圖、CSV、審核頁、debug 圖</td>
+        </tr>
+        <tr>
+          <td><code>CLAUDE.md</code></td>
+          <td>Claude Code 工作規則，啟動後自動載入</td>
         </tr>
       </tbody>
     </table>
   </section>
 
-  <section id="environment">
-    <h2>環境安裝</h2>
-    <h3>1. 建議版本</h3>
-    <p>建議使用 <strong>Python 3.10</strong>。目前套件鎖定如下：</p>
-    <pre><code>numpy==1.26.4
-opencv-python==4.6.0.66
-paddlepaddle==2.6.2
-paddleocr==2.7.3</code></pre>
-    <p>不建議直接使用 NumPy 2.x 或 Python 3.12，因為 PaddleOCR / PaddlePaddle 在 Windows 上較容易遇到相容性問題。</p>
-
-    <h3>2. 安裝套件</h3>
-    <p>在專案資料夾開啟 PowerShell：</p>
-    <pre><code>cd C:\Users\ashleyli\Documents\Codex\2026-04-30\files-mentioned-by-the-user-main\slot_classifier_figma_share_package
-.\setup_venv.ps1</code></pre>
-
-    <h3>3. 檢查環境</h3>
-    <pre><code>.\check_environment.ps1</code></pre>
-    <p>這會檢查 Python、OpenCV、PaddleOCR 等套件是否能正常載入。</p>
-
-    <div class="note warning">
-      若安裝 PaddleOCR 時出現 Windows Long Path 或路徑過長錯誤，建議把整個資料夾搬到較短路徑，例如 <code>D:\slot_classifier_figma_share_package</code> 或 <code>C:\slot_classifier_figma_share_package</code>，再重新建立 <code>.venv</code>。
-    </div>
-  </section>
-
-  <section id="classification">
-    <h2>執行分類</h2>
-    <h3>方式 A：雙擊批次檔</h3>
-    <p>把影片放入 <code>project\input_videos</code> 後，雙擊：</p>
-    <pre><code>run_classify_and_symbols.bat</code></pre>
-    <p>這會處理 input 資料夾內的所有影片。</p>
-
-    <h3>方式 B：用 PowerShell 執行</h3>
-    <pre><code>.\run_classifier.ps1</code></pre>
-    <p>這會直接執行 <code>app\main.py</code>，使用專案內的 <code>.venv\Scripts\python.exe</code>，如果找不到才會改用系統 Python。</p>
-
-    <h3>方式 C：只跑指定影片</h3>
-    <p>如果只想跑單一影片，可以用影片檔名 stem 指定。假設影片是 <code>Perfect Strike.mp4</code>：</p>
-    <pre><code>.\run_classify_and_symbols.bat "Perfect Strike"</code></pre>
-
-    <h3>方式 D：傳入進階參數</h3>
-    <p>批次檔會把 <code>--</code> 開頭的參數轉交給 <code>app\main.py</code>。例如：</p>
-    <pre><code>.\run_classify_and_symbols.bat --video-id "Perfect Strike" --symbol-debug
-.\run_classify_and_symbols.bat --skip-symbols</code></pre>
-  </section>
-
-  <section id="outputs">
-    <h2>輸出結果</h2>
-    <p>分類完成後，主要結果會出現在：</p>
-    <pre><code>project\output\&lt;video_id&gt;\</code></pre>
+  <!-- ③ Claude 串聯流程 -->
+  <section id="claude-workflow">
+    <h2>Claude 串聯完整流程</h2>
+    <p>在專案根目錄執行 <code>claude</code> 後，輸入以下指令即可觸發完整流程：</p>
+    <pre><code>幫我分析 WildTrain</code></pre>
+    <p>Claude 會依序自動執行：</p>
     <table>
       <thead>
-        <tr>
-          <th>輸出</th>
-          <th>說明</th>
-        </tr>
+        <tr><th>步驟</th><th>動作</th><th>說明</th></tr>
       </thead>
       <tbody>
         <tr>
-          <td><code>Basegame</code></td>
-          <td>主遊戲畫面，通常包含 spin、auto、下注、餘額等底部 UI。</td>
+          <td>①</td>
+          <td>確認影片</td>
+          <td><code>project/input_videos/WildTrain.mp4</code> 是否存在</td>
         </tr>
         <tr>
-          <td><code>Feature game</code></td>
-          <td>Free game、Bonus、Remaining Free Spins 等正在進行中的特色遊戲畫面。</td>
+          <td>②</td>
+          <td>Auto ROI 偵測</td>
+          <td>自動找出遊戲畫面區域，生成 <code>_debug/roi_adjust.html</code></td>
         </tr>
         <tr>
-          <td><code>BigWin</code></td>
-          <td>Big Win、Mega Win、Super Win、Jumbo Win 等大獎畫面。</td>
+          <td>③</td>
+          <td>等待 ROI 確認</td>
+          <td>輸出 <code>WAITING_ROI_CONFIRM:</code>，等你在瀏覽器確認並回覆</td>
         </tr>
         <tr>
-          <td><code>Transition</code></td>
-          <td>進入或離開 feature 的轉場，例如 Start、Continue、Confirm。</td>
+          <td>④</td>
+          <td>執行分類</td>
+          <td>帶確認的 ROI 座標跑 <code>classify_with_roi_confirm.sh --roi x,y,w,h</code></td>
         </tr>
         <tr>
-          <td><code>Result</code></td>
-          <td>Total Win、Collect、You've won 等結算畫面。</td>
+          <td>⑤</td>
+          <td>生成審核頁</td>
+          <td><code>generate_review_page.py</code> → <code>review.html</code></td>
         </tr>
         <tr>
-          <td><code>Help</code></td>
-          <td>規則說明、Paytable、Symbol Payout Values 等頁面，也是 symbol 裁切的主要來源。</td>
+          <td>⑥</td>
+          <td>啟動審核 Server</td>
+          <td><code>http://localhost:8765</code> 自動開起來</td>
         </tr>
         <tr>
-          <td><code>Feature Buy</code></td>
-          <td>購買 feature 的彈窗或入口畫面。</td>
+          <td>⑦</td>
+          <td>回報結果</td>
+          <td>各類別截圖數量 + 需人工審核張數</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>其他可對 Claude 說的指令</h3>
+    <pre><code># 重新生成審核頁（不重跑分類）
+幫我重新生成 WildTrain 的審核頁
+
+# 直接指定 ROI 跳過確認
+用 ROI 400,50,650,950 重新分類 WildTrain
+
+# 查看分類統計
+WildTrain 各類別各幾張？
+
+# 查看可分析的影片
+input_videos 裡有什麼？</code></pre>
+  </section>
+
+  <!-- ④ ROI 確認 -->
+  <section id="roi">
+    <h2>ROI 確認說明</h2>
+    <p>
+      分類前需確認 <strong>ROI（遊戲畫面區域）</strong> 是否正確。ROI 偏移會讓分類器讀到影片外框，降低準確度。
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h3>如何確認</h3>
+        <ol>
+          <li>Claude 給你 <code>roi_adjust.html</code> 路徑後，用瀏覽器開啟</li>
+          <li>檢查<strong>綠色邊框</strong>是否緊貼遊戲畫面（不含影片黑邊）</li>
+          <li>若需調整：<strong>拖曳四角或側邊</strong>調整範圍</li>
+          <li>按「<strong>✅ 確認 ROI</strong>」→ 座標自動複製到剪貼簿</li>
+          <li>貼回 Claude Chat 送出</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>回覆格式</h3>
+        <p>需要調整時：</p>
+        <pre><code>ROI 確認：400,50,650,950</code></pre>
+        <p>邊框正確不需調整時：</p>
+        <pre><code>ROI OK</code></pre>
+        <p>座標格式：<code>x, y, width, height</code>（從左上角開始）</p>
+      </div>
+    </div>
+    <div class="note warning">
+      ROI 偵測是依據影片前段的動態畫面自動計算。若影片前段有片頭 logo 或靜態畫面，偵測框可能偏移，需要手動調整。
+    </div>
+  </section>
+
+  <!-- ⑤ 人工審核 -->
+  <section id="review">
+    <h2>人工審核操作</h2>
+    <p>分類完成後，Server 自動啟動，開瀏覽器前往 <code>http://localhost:8765</code>。</p>
+
+    <h3>信心等級說明</h3>
+    <table>
+      <thead>
+        <tr><th>等級</th><th>意義</th><th>標籤顏色</th><th>建議動作</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>high</code></td>
+          <td>分類確定</td>
+          <td>🟢 綠色</td>
+          <td>直接跳過即可</td>
         </tr>
         <tr>
-          <td><code>loading</code></td>
-          <td>載入頁、logo、進度條、授權資訊等。</td>
+          <td><code>medium</code></td>
+          <td>有把握但邊界模糊</td>
+          <td>🟡 黃色</td>
+          <td>快速掃一眼，有問題再修正</td>
         </tr>
         <tr>
-          <td><code>Other</code></td>
-          <td>無法穩定歸類或不適合研究看板的畫面。</td>
+          <td><code>low</code></td>
+          <td>信心不足</td>
+          <td>🔴 紅色</td>
+          <td>建議確認，視情況改分類或排除</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>每張卡片的操作</h3>
+    <table>
+      <thead>
+        <tr><th>按鈕</th><th>動作</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>✅ 正確</td>
+          <td>標記確認，不移動檔案</td>
         </tr>
         <tr>
-          <td><code>low_score</code></td>
-          <td>低信心或品質較差的圖片，保留給人工檢查。</td>
+          <td>🔀 改分類</td>
+          <td>從下拉選單選正確類別</td>
         </tr>
         <tr>
-          <td><code>classification_result.csv</code></td>
-          <td>分類紀錄，包含每張候選圖的分類、分數與 OCR 資訊。</td>
+          <td>🗑️ 排除</td>
+          <td>標記為排除（移到 <code>excluded/</code>）</td>
         </tr>
+      </tbody>
+    </table>
+
+    <p>右上角會顯示「待處理 N 張」，全部處理後按「<strong>套用修正</strong>」，系統自動移動截圖並更新 CSV。</p>
+
+    <div class="note warning">
+      若以 <code>file://</code> 直接開啟 review.html（非 localhost），按下套用後會<strong>複製 JSON 到剪貼簿</strong>，需手動執行：
+      <pre><code>.venv/bin/python apply_corrections.py --json '&lt;貼上剪貼簿內容&gt;'</code></pre>
+    </div>
+  </section>
+
+  <!-- ⑥ 輸出結果 -->
+  <section id="outputs">
+    <h2>輸出結果說明</h2>
+    <p>分類完成後，主要輸出位於 <code>project/output/&lt;影片名&gt;/</code>：</p>
+    <table>
+      <thead>
+        <tr><th>輸出</th><th>說明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>Basegame/</code></td><td>一般底層遊戲畫面（含 Spin、Auto、餘額 UI）</td></tr>
+        <tr><td><code>Feature game/</code></td><td>Free Spin、Bonus 等特殊功能進行中</td></tr>
+        <tr><td><code>BigWin/</code></td><td>Big Win、Mega Win、Super Win、Jackpot 等</td></tr>
+        <tr><td><code>Transition/</code></td><td>進出 Feature 的轉場（Start、Continue、Confirm）</td></tr>
+        <tr><td><code>Result/</code></td><td>結算畫面（Total Win、Collect、You've won）</td></tr>
+        <tr><td><code>Help/</code></td><td>說明頁、Paytable、Symbol Payout Values</td></tr>
+        <tr><td><code>loading/</code></td><td>載入頁、logo、進度條</td></tr>
+        <tr><td><code>Other/</code></td><td>無法穩定歸類的畫面</td></tr>
+        <tr><td><code>needs_review/</code></td><td>中低信心截圖的副本，方便快速找到待確認項目</td></tr>
+        <tr><td><code>excluded/</code></td><td>人工審核後手動排除的截圖</td></tr>
+        <tr><td><code>_debug/roi_adjust.html</code></td><td>互動式 ROI 調整頁</td></tr>
+        <tr><td><code>classification_result.csv</code></td><td>完整分類紀錄（含信心分數）</td></tr>
+        <tr><td><code>review.html</code></td><td>人工審核頁（瀏覽器開啟）</td></tr>
+      </tbody>
+    </table>
+
+    <h3>CSV 主要欄位</h3>
+    <table>
+      <thead>
+        <tr><th>欄位</th><th>說明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>final_category</code></td><td>最終分類結果</td></tr>
+        <tr><td><code>confidence_level</code></td><td>信心等級（high / medium / low）</td></tr>
+        <tr><td><code>confidence_score</code></td><td>信心分數（0.0 ～ 1.0）</td></tr>
+        <tr><td><code>top_score</code></td><td>最高類別分數</td></tr>
+        <tr><td><code>raw_texts</code></td><td>OCR 辨識文字清單</td></tr>
+        <tr><td><code>matched_keywords</code></td><td>命中的分類關鍵字</td></tr>
+        <tr><td><code>roi</code></td><td>使用的 ROI 座標 (x,y,w,h)</td></tr>
+        <tr><td><code>save_path</code></td><td>截圖檔案絕對路徑</td></tr>
       </tbody>
     </table>
   </section>
 
-  <section id="symbols">
-    <h2>Symbol 圖輸出</h2>
-    <p>
-      目前分類器已和 <code>generate_symbol_table.py</code> 整合。分類完成後，工具會嘗試從 <code>Help</code> 或 <code>low_score\Help</code> 中找 Paytable 畫面，再裁切 symbol 圖。
-    </p>
-    <p>常見輸出位置：</p>
-    <pre><code>project\output\&lt;video_id&gt;\symbol_table\
-project\output\&lt;video_id&gt;\symbol_table\symbols\
-project\output\&lt;video_id&gt;\symbol_table\final_icons_contact_sheet.jpg</code></pre>
+  <!-- ⑦ 手動指令 -->
+  <section id="manual">
+    <h2>手動執行指令（不使用 Claude）</h2>
+    <h3>完整流程（含 ROI 確認）</h3>
+    <pre><code># 步驟一：Auto ROI 偵測（看到 WAITING_ROI_CONFIRM 後停止）
+bash classify_with_roi_confirm.sh --video-id WildTrain
 
-    <div class="grid">
-      <div class="card">
-        <h3>適合做什麼</h3>
-        <ul>
-          <li>建立競品 symbol 素材庫。</li>
-          <li>比較高低階符號、美術風格、特殊符號。</li>
-          <li>整理成 Figma / FigJam icon board。</li>
-          <li>後續人工命名、分級、標註。</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>可能需要人工檢查的情況</h3>
-        <ul>
-          <li>Paytable 圖上有大量 payout 數字貼近 symbol。</li>
-          <li>Help 頁是滾動式網頁，畫面只擷取到部分內容。</li>
-          <li>symbol 被特效、框線、文字遮擋。</li>
-          <li>部分遊戲的 paytable 版面和一般 slot 差異很大。</li>
-        </ul>
-      </div>
-    </div>
+# 步驟二：帶 ROI 座標重跑（含分類 + 審核頁 + 啟動 Server）
+bash classify_with_roi_confirm.sh --video-id WildTrain --roi 400,50,650,950</code></pre>
+
+    <h3>直接指定 ROI（跳過偵測）</h3>
+    <pre><code>bash run_classify_roi.sh --video-id WildTrain --roi 400,50,650,950</code></pre>
+
+    <h3>單獨生成審核頁</h3>
+    <pre><code>.venv/bin/python app/generate_review_page.py project/output/WildTrain</code></pre>
+
+    <h3>單獨啟動審核 Server</h3>
+    <pre><code>.venv/bin/python review_server.py --video-id WildTrain
+# 開瀏覽器前往 http://localhost:8765</code></pre>
+
+    <h3>套用修正（從 JSON 檔）</h3>
+    <pre><code>.venv/bin/python apply_corrections.py corrections.json</code></pre>
   </section>
 
-  <section id="figma">
-    <h2>Figma / FigJam 匯出</h2>
-    <p>分類完成後，可以產生 Figma / FigJam 匯入用資料：</p>
-    <pre><code>.\run_figma_export.ps1</code></pre>
-    <p>輸出會在：</p>
-    <pre><code>figma_export\
-  figma_manifest.json
-  images\</code></pre>
-    <p>匯入 Figma / FigJam 的步驟：</p>
-    <ol>
-      <li>開啟 Figma Desktop。</li>
-      <li>進入 <code>Plugins</code>，選擇 <code>Development</code>，再選 <code>Import plugin from manifest...</code>。</li>
-      <li>選取 <code>figma_tools\figma_plugin\manifest.json</code>。</li>
-      <li>開啟一個 Figma 或 FigJam 檔案。</li>
-      <li>執行 plugin：<code>Slot Research Board Importer</code>。</li>
-      <li>當 plugin 要求選資料夾時，選整個 <code>figma_export</code> 資料夾。</li>
-    </ol>
-    <div class="note">
-      Figma 匯出預設保留每支影片的代表圖，例如 loading、Basegame、Transition、FreeGame、BUY FEATURE、Result。BigWin 會盡量保留最多三種代表大獎階段。<code>Help</code> 與 <code>Other</code> 不會放進 Figma 研究看板。
-    </div>
-  </section>
-
+  <!-- ⑧ 常見問題 -->
   <section id="troubleshooting">
     <h2>常見問題</h2>
-    <h3>PowerShell 無法執行 .ps1</h3>
-    <p>如果系統阻擋 <code>.ps1</code>，可以用目前使用者範圍調整執行政策：</p>
-    <pre><code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code></pre>
+    <h3>Q: 分類完成但 review.html 是空的</h3>
+    <pre><code>.venv/bin/python app/generate_review_page.py project/output/WildTrain</code></pre>
 
-    <h3>安裝套件失敗或 PaddleOCR 無法安裝</h3>
-    <ul>
-      <li>確認 Python 是 3.10。</li>
-      <li>確認專案路徑不要太長。</li>
-      <li>刪除 <code>.venv</code> 後重新執行 <code>setup_venv.ps1</code>。</li>
-      <li>若公司網路或 VPN 擋住 pip 下載，需要切換網路或請 IT 協助。</li>
-    </ul>
+    <h3>Q: ROI 調整頁開啟後是空白</h3>
+    <p>手動重新生成：</p>
+    <pre><code>.venv/bin/python app/generate_roi_preview.py --video-id WildTrain</code></pre>
+    <p>再用瀏覽器開啟：<code>project/output/WildTrain/_debug/roi_adjust.html</code></p>
 
-    <h3>分類結果太少或很多圖進 low_score</h3>
-    <ul>
-      <li>先確認影片本身是否清晰，是否有完整遊戲畫面。</li>
-      <li>檢查 <code>classification_result.csv</code> 內的分類與分數。</li>
-      <li>查看 <code>low_score</code>，有些圖可能只是信心較低，仍可人工使用。</li>
-      <li>若是特殊玩法，例如足球、卡牌、輪盤式 bonus，可能會被放進 <code>Other</code>。</li>
-    </ul>
+    <h3>Q: review server 啟動失敗（port 8765 已占用）</h3>
+    <pre><code>.venv/bin/python review_server.py --video-id WildTrain --port 8766</code></pre>
 
-    <h3>Figma plugin 找不到圖片</h3>
-    <ul>
-      <li>確認已先執行 <code>run_figma_export.ps1</code>。</li>
-      <li>選資料夾時要選整個 <code>figma_export</code>，不是只選 <code>images</code>。</li>
-      <li>確認 <code>figma_export\figma_manifest.json</code> 存在。</li>
-    </ul>
+    <h3>Q: 第一次跑很慢（等很久才開始處理）</h3>
+    <p>PaddleOCR 首次執行會自動下載語言模型（約 300 MB），屬正常現象，後續不會重複下載。</p>
+
+    <h3>Q: 分類速度很慢</h3>
+    <p>調高取樣間隔降低工作量：</p>
+    <pre><code># app/constants.py
+FRAME_INTERVAL = 30  # 預設 20，調高可加快速度</code></pre>
+
+    <h3>Q: 套用修正後 needs_review/ 仍有舊截圖</h3>
+    <p><code>needs_review/</code> 是分類時的副本，<code>apply_corrections</code> 只移動主目錄的原始檔，副本可手動刪除，不影響 CSV 紀錄。</p>
+
+    <h3>Q: Windows 下執行 .sh 腳本</h3>
+    <p>使用 Git Bash 或 WSL 執行 <code>.sh</code> 腳本。或在 WSL 中直接執行 Python：</p>
+    <pre><code>.venv/bin/python app/main.py --video-id WildTrain</code></pre>
   </section>
 
-  <section id="references">
-    <h2>本文件參考資料</h2>
-    <p>本使用說明依據資料夾內現有技術文件與腳本整理：</p>
-    <ul>
-      <li><code>README.md</code></li>
-      <li><code>python_environment_install_guide.html</code></li>
-      <li><code>slot_classifier_tech_summary_selfcontained.html</code></li>
-      <li><code>generate_symbol_table_tech_summary.html</code></li>
-      <li><code>run_classifier.ps1</code>、<code>run_figma_export.ps1</code>、<code>run_classify_and_symbols.bat</code></li>
-    </ul>
-    <p class="path">
-      專案路徑：<code>C:\Users\ashleyli\Documents\Codex\2026-04-30\files-mentioned-by-the-user-main\slot_classifier_figma_share_package</code>
-    </p>
-  </section>
 </main>
 </body>
 </html>

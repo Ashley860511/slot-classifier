@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Slot Classifier Python 環境安裝說明</title>
+  <title>Slot Classifier 環境安裝說明</title>
   <style>
     :root {
       --bg: #f6f7fb;
@@ -29,29 +29,16 @@
       font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
       line-height: 1.65;
     }
-    main {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 40px 20px 72px;
-    }
-    header {
-      margin-bottom: 24px;
-    }
-    h1 {
-      margin: 0 0 8px;
-      font-size: 32px;
-      line-height: 1.25;
-    }
+    main { max-width: 980px; margin: 0 auto; padding: 40px 20px 72px; }
+    header { margin-bottom: 24px; }
+    h1 { margin: 0 0 8px; font-size: 32px; line-height: 1.25; }
     h2 {
       margin: 36px 0 12px;
       padding-top: 12px;
       border-top: 1px solid var(--line);
       font-size: 22px;
     }
-    h3 {
-      margin: 22px 0 8px;
-      font-size: 17px;
-    }
+    h3 { margin: 22px 0 8px; font-size: 17px; }
     p, li { color: var(--muted); }
     strong { color: var(--text); }
     .card {
@@ -60,7 +47,7 @@
       border-radius: 14px;
       padding: 20px;
       margin: 16px 0;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+      box-shadow: 0 8px 24px rgba(15,23,42,.05);
     }
     .note {
       border-radius: 12px;
@@ -70,16 +57,8 @@
       border: 1px solid #c7d9ff;
       color: #1e3a8a;
     }
-    .warning {
-      background: var(--warn-soft);
-      border-color: #fed7aa;
-      color: var(--warn);
-    }
-    .success {
-      background: var(--ok-soft);
-      border-color: #bbf7d0;
-      color: var(--ok);
-    }
+    .warning { background: var(--warn-soft); border-color: #fed7aa; color: var(--warn); }
+    .success { background: var(--ok-soft); border-color: #bbf7d0; color: var(--ok); }
     code {
       font-family: Consolas, "Courier New", monospace;
       font-size: 0.95em;
@@ -97,12 +76,7 @@
       color: var(--code-text);
       line-height: 1.5;
     }
-    pre code {
-      background: transparent;
-      color: inherit;
-      padding: 0;
-      border-radius: 0;
-    }
+    pre code { background: transparent; color: inherit; padding: 0; border-radius: 0; }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -112,33 +86,29 @@
       border-radius: 12px;
       overflow: hidden;
     }
-    th, td {
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--line);
-      vertical-align: top;
-    }
-    th {
-      background: #eef2f7;
-      color: var(--text);
-    }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { background: #eef2f7; color: var(--text); }
     tr:last-child td { border-bottom: 0; }
-    .toc a {
-      color: var(--accent);
-      text-decoration: none;
-    }
+    .toc a { color: var(--accent); text-decoration: none; }
     .toc a:hover { text-decoration: underline; }
-    .path {
-      word-break: break-all;
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: var(--accent-soft);
+      color: #1e3a8a;
+      margin-left: 6px;
     }
   </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>Slot Classifier Python 環境安裝說明</h1>
-    <p>更新日期：2026-05-12</p>
-    <p>這份文件是給第一次接觸專案的人使用，目標是讓對方可以把影片放進資料夾，安裝 Python 環境，並成功執行 slot 遊戲影片截圖分類與 Symbol 裁切工具。</p>
+    <h1>Slot Classifier 環境安裝說明</h1>
+    <p>更新日期：2026-06-08　｜　分支：<code>perf/cpu-optimize-ocr</code></p>
+    <p>這份文件協助第一次接觸本工具的人完成環境安裝，並透過 <strong>Claude Code</strong> 串聯完整競品截圖分類流程。</p>
   </header>
 
   <section class="card toc">
@@ -146,244 +116,237 @@
     <ol>
       <li><a href="#overview">專案資料夾結構</a></li>
       <li><a href="#prepare">安裝前準備</a></li>
-      <li><a href="#install">建立 Python 環境</a></li>
-      <li><a href="#verify">確認環境是否正常</a></li>
-      <li><a href="#run">如何執行工具</a></li>
-      <li><a href="#troubleshooting">常見問題與注意事項</a></li>
+      <li><a href="#python">安裝 Python 環境</a></li>
+      <li><a href="#claude">安裝 Claude Code CLI</a></li>
+      <li><a href="#verify">確認環境正常</a></li>
+      <li><a href="#run">首次執行工具</a></li>
+      <li><a href="#troubleshooting">常見問題</a></li>
+      <li><a href="#quickref">最短安裝流程（對外分享版）</a></li>
     </ol>
   </section>
 
+  <!-- 1. 資料夾結構 -->
   <h2 id="overview">1. 專案資料夾結構</h2>
-  <p>目前分享包的主要資料夾是：</p>
-  <pre><code>slot_classifier_figma_share_package
-├─ app
+  <p>從 GitHub 取得的專案結構如下：</p>
+  <pre><code>slot-classifier/
+├─ app/
+│  ├─ pipeline.py              # 核心分類流程
+│  ├─ scorers/                 # 各類別評分模組
+│  │  ├─ classifier.py
+│  │  ├─ confidence.py
+│  │  ├─ bigwin_scorer.py
+│  │  └─ ...
 │  ├─ main.py
-│  ├─ generate_symbol_table.py
 │  ├─ auto_roi.py
-│  ├─ video_io.py
 │  ├─ ocr_utils.py
 │  ├─ config.py
-│  ├─ analysis
-│  └─ symbol_table
-├─ project
-│  ├─ input_videos
-│  └─ output
-├─ figma_export
-├─ figma_tools
+│  ├─ constants.py
+│  ├─ generate_review_page.py
+│  └─ generate_roi_preview.py
+├─ project/
+│  ├─ input_videos/            # ← 放影片
+│  └─ output/                  # ← 分類輸出
+├─ review_server.py            # 本機審核 Server
+├─ apply_corrections.py        # 套用人工修正
+├─ classify_with_roi_confirm.sh # 主入口腳本
+├─ run_classify_roi.sh
 ├─ requirements.txt
-├─ setup_venv.ps1
-├─ check_environment.ps1
-├─ run_classifier.ps1
-└─ README.md</code></pre>
+├─ check_environment.py
+└─ CLAUDE.md                   # Claude Code 工作規則</code></pre>
 
   <table>
-    <thead>
-      <tr>
-        <th>位置</th>
-        <th>用途</th>
-      </tr>
-    </thead>
+    <thead><tr><th>位置</th><th>用途</th></tr></thead>
     <tbody>
-      <tr>
-        <td><code>app/main.py</code></td>
-        <td>主要分類程式：讀取影片、截圖、Auto ROI、OCR、分類 Basegame / Feature game / BigWin / Help 等資料夾。</td>
-      </tr>
-      <tr>
-        <td><code>app/generate_symbol_table.py</code></td>
-        <td>從 Help / Paytable 圖片中找出 symbol icon，並輸出裁切後的圖示候選。</td>
-      </tr>
-      <tr>
-        <td><code>project/input_videos</code></td>
-        <td>放入要分析的影片。建議使用 <code>.mp4</code>。</td>
-      </tr>
-      <tr>
-        <td><code>project/output</code></td>
-        <td>程式輸出的分類結果、debug 圖、CSV、報告與 symbol 裁切資料夾。</td>
-      </tr>
-      <tr>
-        <td><code>requirements.txt</code></td>
-        <td>Python 套件清單，目前包含 OpenCV、PaddleOCR、PaddlePaddle、NumPy。</td>
-      </tr>
+      <tr><td><code>app/pipeline.py</code></td><td>核心分類流程：截圖、OCR、評分、信心分數、CSV 輸出</td></tr>
+      <tr><td><code>app/scorers/</code></td><td>各類別評分模組（若缺少此目錄，分類會失敗）</td></tr>
+      <tr><td><code>app/generate_review_page.py</code></td><td>生成可在瀏覽器操作的 review.html 審核頁</td></tr>
+      <tr><td><code>review_server.py</code></td><td>本機 HTTP Server，讓審核頁可以自動套用修正</td></tr>
+      <tr><td><code>apply_corrections.py</code></td><td>接收修正 JSON，移動截圖並更新 CSV</td></tr>
+      <tr><td><code>classify_with_roi_confirm.sh</code></td><td>主入口：ROI 偵測 → 確認 → 分類 → 審核頁 → Server</td></tr>
+      <tr><td><code>CLAUDE.md</code></td><td>Claude Code 啟動後自動載入的工作規則</td></tr>
+      <tr><td><code>project/input_videos/</code></td><td>放入要分析的 <code>.mp4</code></td></tr>
+      <tr><td><code>project/output/</code></td><td>每部影片的分類截圖、CSV、審核頁</td></tr>
     </tbody>
   </table>
 
+  <!-- 2. 安裝前準備 -->
   <h2 id="prepare">2. 安裝前準備</h2>
-  <h3>2.1 建議把專案放在短路徑</h3>
-  <p>這個專案會安裝 PaddleOCR / PaddlePaddle，套件內部檔案很多、路徑也可能很長。Windows 如果路徑太深，安裝時容易出現「找不到檔案」或「Windows Long Path」相關錯誤。</p>
 
+  <h3>2.1 取得專案</h3>
+  <pre><code>git clone https://github.com/Ashley860511/slot-classifier.git
+cd slot-classifier
+git checkout perf/cpu-optimize-ocr</code></pre>
+
+  <h3>2.2 建議放在短路徑（Windows）</h3>
+  <p>PaddleOCR 套件內部路徑很長，Windows 路徑過深容易導致安裝失敗。</p>
   <div class="note success">
-    <strong>建議路徑：</strong>
-    <br><code>D:\slot_classifier_figma_share_package</code>
-    <br><code>C:\slot_classifier_figma_share_package</code>
+    <strong>建議路徑：</strong><br>
+    <code>D:\slot-classifier</code><br>
+    <code>C:\slot-classifier</code>
   </div>
-
   <div class="note warning">
-    <strong>避免太深的路徑：</strong>
-    <br><code>C:\Users\你的名字\Documents\很長的資料夾\很長的日期\很多層資料夾\slot_classifier_figma_share_package</code>
-    <br>路徑越深，安裝 PaddleOCR 時越容易失敗。
+    <strong>避免：</strong><br>
+    <code>C:\Users\名字\Documents\很多層資料夾\slot-classifier</code>
   </div>
 
-  <h3>2.2 安裝 Python</h3>
-  <p>建議使用 <strong>Python 3.10</strong>。目前專案使用的 PaddleOCR / PaddlePaddle 版本與 Python 3.10 搭配較穩定。</p>
+  <!-- 3. Python 環境 -->
+  <h2 id="python">3. 安裝 Python 環境</h2>
+
+  <h3>3.1 安裝 Python 3.10</h3>
+  <p>建議使用 <strong>Python 3.10</strong>，其他版本可能與 PaddleOCR 有相容性問題。</p>
   <ol>
-    <li>到 Python 官方網站下載 Python 3.10。</li>
-    <li>安裝時勾選 <strong>Add python.exe to PATH</strong>。</li>
-    <li>安裝完成後，打開 PowerShell，輸入下面指令確認版本。</li>
+    <li>前往 <a href="https://www.python.org/downloads/" target="_blank">python.org</a> 下載 Python 3.10</li>
+    <li>安裝時勾選 <strong>Add python.exe to PATH</strong></li>
+    <li>確認版本：<code>python --version</code></li>
   </ol>
-  <pre><code>python --version</code></pre>
-  <p>如果看到類似 <code>Python 3.10.x</code>，代表 Python 已安裝成功。</p>
 
-  <h2 id="install">3. 建立 Python 環境</h2>
-  <p>以下步驟都在 <strong>PowerShell</strong> 執行。請先進入專案根目錄，也就是有 <code>requirements.txt</code> 的那一層。</p>
+  <h3>3.2 建立虛擬環境</h3>
+  <pre><code># macOS / Linux
+python3.10 -m venv .venv
+source .venv/bin/activate
 
-  <h3>3.1 切換到專案資料夾</h3>
-  <p>如果你把專案放在 <code>D:\slot_classifier_figma_share_package</code>，請輸入：</p>
-  <pre><code>cd D:\slot_classifier_figma_share_package</code></pre>
-
-  <p>如果你仍使用目前這份工作資料夾，路徑會像這樣：</p>
-  <pre><code>cd C:\Users\ashleyli\Documents\Codex\2026-04-30\files-mentioned-by-the-user-main\slot_classifier_figma_share_package</code></pre>
+# Windows PowerShell
+python -m venv .venv
+.venv\Scripts\Activate.ps1</code></pre>
 
   <div class="note warning">
-    對外分享時，建議請同事先把資料夾移到短路徑，例如 <code>D:\slot_classifier_figma_share_package</code>，再開始安裝。
+    若 PowerShell 阻擋 <code>.ps1</code>，先執行：
+    <code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>
   </div>
 
-  <h3>3.2 建立專案專用環境</h3>
-  <p>請在專案根目錄執行：</p>
-  <pre><code>python -m venv .venv</code></pre>
+  <h3>3.3 安裝套件</h3>
+  <pre><code># 更新安裝工具
+pip install --upgrade pip setuptools wheel
 
-  <p>這會建立一個叫做 <code>.venv</code> 的資料夾。它是這個專案專用的 Python 環境，避免影響電腦上其他 Python 專案。</p>
+# 安裝專案套件（約 5～15 分鐘，視網路速度）
+pip install -r requirements.txt</code></pre>
 
-  <h3>3.3 安裝需要的套件</h3>
-  <p>先更新安裝工具：</p>
-  <pre><code>.\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel</code></pre>
-
-  <p>再安裝專案套件：</p>
-  <pre><code>.\.venv\Scripts\python.exe -m pip install -r requirements.txt</code></pre>
-
-  <p>目前 <code>requirements.txt</code> 內主要包含：</p>
+  <p>目前 <code>requirements.txt</code> 主要包含：</p>
   <pre><code>numpy==1.26.4
 opencv-python==4.6.0.66
 paddlepaddle==2.6.2
 paddleocr==2.7.3</code></pre>
 
   <div class="note">
-    這份安裝清單是 CPU 版本，不需要額外安裝顯卡或 CUDA。第一次安裝會下載較多套件，需要一些時間。
+    此為 <strong>CPU-only</strong> 安裝，不需要 GPU 或 CUDA。<br>
+    首次執行分類時，PaddleOCR 還會自動下載語言模型（約 300 MB），屬正常現象。
   </div>
 
-  <h2 id="verify">4. 確認環境是否正常</h2>
-  <h3>4.1 使用檢查腳本</h3>
-  <p>專案根目錄有提供 <code>check_environment.ps1</code>，可以快速檢查常用套件是否能被載入：</p>
-  <pre><code>.\check_environment.ps1</code></pre>
+  <!-- 4. Claude Code -->
+  <h2 id="claude">4. 安裝 Claude Code CLI <span class="badge">新增</span></h2>
+  <p>Claude Code 是串聯本工具完整流程的主要介面，安裝後只需用對話輸入指令即可完成分析。</p>
 
-  <p>如果 PowerShell 不允許執行 <code>.ps1</code>，可以先改用下面的直接檢查指令：</p>
-  <pre><code>.\.venv\Scripts\python.exe -c "import numpy, cv2, paddle, paddleocr; print('Python environment OK')"</code></pre>
+  <h3>4.1 安裝 Node.js（前置）</h3>
+  <p>Claude Code 需要 <strong>Node.js 18 以上</strong>。前往 <a href="https://nodejs.org" target="_blank">nodejs.org</a> 下載 LTS 版本。</p>
+  <pre><code># 確認版本
+node --version   # 需 v18 以上
+npm --version</code></pre>
 
-  <p>看到 <code>Python environment OK</code> 就代表基本套件可以正常載入。</p>
+  <h3>4.2 安裝 Claude Code</h3>
+  <pre><code>npm install -g @anthropic/claude-code</code></pre>
 
-  <h3>4.2 如果 PowerShell 阻擋 ps1 檔</h3>
-  <p>有些電腦第一次執行 PowerShell 腳本會被系統阻擋。可使用以下指令允許目前使用者執行本機腳本：</p>
-  <pre><code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code></pre>
-  <p>輸入後若出現確認問題，輸入 <code>Y</code> 後按 Enter。</p>
+  <h3>4.3 登入 Anthropic 帳號</h3>
+  <pre><code>claude login</code></pre>
+  <p>依照提示在瀏覽器完成登入，回到終端後即完成。</p>
 
-  <h2 id="run">5. 如何執行工具</h2>
-  <h3>5.1 影片分類工具 main.py</h3>
-  <ol>
-    <li>把影片放進 <code>project\input_videos</code>。</li>
-    <li>在專案根目錄執行分類程式。</li>
-  </ol>
-
-  <p>使用腳本：</p>
-  <pre><code>.\run_classifier.ps1</code></pre>
-
-  <p>或使用完整 Python 指令：</p>
-  <pre><code>.\.venv\Scripts\python.exe app\main.py</code></pre>
-
-  <p>完成後，到 <code>project\output</code> 查看輸出結果。</p>
-
-  <h3>5.2 Symbol 裁切工具 generate_symbol_table.py</h3>
-  <p>如果已經跑過 <code>main.py</code>，Help 圖片會在 <code>project\output\影片名稱或編號\Help</code> 相關資料夾內。接著可以執行 Symbol 裁切工具：</p>
-  <pre><code>.\.venv\Scripts\python.exe app\generate_symbol_table.py --video-id 8</code></pre>
-
-  <p><code>--video-id 8</code> 代表分析 <code>project\output\8</code> 這支影片的輸出資料。若影片資料夾叫做 <code>Wild Train</code> 或 <code>Caishen Wins</code>，可以改用對應名稱。</p>
-
-  <div class="note">
-    目前 <code>generate_symbol_table.py</code> 的目標是本地端產出 symbol icon 候選與最終裁切圖，不需要先串 Claude API。後續若要自動命名與整理報告，才需要再接 AI API。
+  <h3>4.4 確認安裝</h3>
+  <pre><code>claude --version</code></pre>
+  <div class="note success">
+    看到版本號碼代表 Claude Code 安裝成功。
   </div>
 
-  <h2 id="troubleshooting">6. 常見問題與注意事項</h2>
+  <!-- 5. 確認環境 -->
+  <h2 id="verify">5. 確認環境正常</h2>
+  <pre><code>python check_environment.py</code></pre>
+  <p>輸出應顯示 Python、OpenCV、PaddleOCR 各套件版本無誤。</p>
 
-  <h3>6.1 PaddleOCR 安裝失敗，出現 Windows Long Path</h3>
-  <p>如果看到類似下面的錯誤：</p>
-  <pre><code>Could not install packages due to an OSError
-HINT: This error might have occurred since this system does not have Windows Long Path support enabled.</code></pre>
+  <p>若無 <code>check_environment.py</code>，可手動確認：</p>
+  <pre><code>python -c "import numpy, cv2, paddle, paddleocr; print('OK')"</code></pre>
 
-  <p>優先建議：</p>
+  <!-- 6. 首次執行 -->
+  <h2 id="run">6. 首次執行工具</h2>
+
+  <h3>方式 A：使用 Claude Code（推薦）</h3>
   <ol>
-    <li>把整個專案移到短路徑，例如 <code>D:\slot_classifier_figma_share_package</code>。</li>
-    <li>刪除舊的 <code>.venv</code>。</li>
-    <li>重新建立環境並安裝套件。</li>
+    <li>把影片放入 <code>project/input_videos/WildTrain.mp4</code></li>
+    <li>在專案根目錄啟動：<code>claude</code></li>
+    <li>輸入：<code>幫我分析 WildTrain</code></li>
+    <li>依照 Claude 的指引確認 ROI、等待分類完成</li>
+    <li>分類完成後開瀏覽器：<code>http://localhost:8765</code></li>
   </ol>
 
-  <p>如果仍失敗，可以請電腦管理者開啟 Windows 長路徑支援。用系統管理員身分開 PowerShell，執行：</p>
-  <pre><code>New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force</code></pre>
-  <p>執行後建議重新開機或至少重新開啟 PowerShell。</p>
+  <h3>方式 B：直接執行腳本</h3>
+  <pre><code># Auto ROI 偵測
+bash classify_with_roi_confirm.sh --video-id WildTrain
 
-  <h3>6.2 不建議直接複製別人的 .venv</h3>
-  <p>雖然直接複製環境資料夾看起來很快，但 Python 虛擬環境內常會記錄原本電腦的路徑。換到另一台電腦後容易出現套件找不到、執行檔失效等問題。</p>
+# 帶 ROI 座標直接分類
+bash classify_with_roi_confirm.sh --video-id WildTrain --roi 400,50,650,950</code></pre>
+
   <div class="note warning">
-    對外分享時，建議分享專案資料夾與 <code>requirements.txt</code>，讓對方在自己的電腦上重新建立 <code>.venv</code>。
+    Windows 使用者需透過 <strong>Git Bash</strong> 或 <strong>WSL</strong> 執行 <code>.sh</code> 腳本。<br>
+    或直接用 Python 執行：<code>python app/main.py --video-id WildTrain</code>
   </div>
 
-  <h3>6.3 安裝套件時網路失敗</h3>
-  <p>如果安裝時顯示連線錯誤，通常是公司網路、防火牆、VPN 或 Python 套件來源被擋。可以嘗試：</p>
+  <!-- 7. 常見問題 -->
+  <h2 id="troubleshooting">7. 常見問題</h2>
+
+  <h3>PaddleOCR 安裝失敗：Windows Long Path</h3>
   <ol>
-    <li>換到較穩定的網路。</li>
-    <li>關閉或切換 VPN。</li>
-    <li>請 IT 協助允許 Python / pip 下載套件。</li>
+    <li>把專案移到短路徑，例如 <code>D:\slot-classifier</code></li>
+    <li>刪除 <code>.venv</code> 後重新建立</li>
   </ol>
+  <p>若仍失敗，請系統管理員開啟 Windows 長路徑支援：</p>
+  <pre><code>New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+  -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force</code></pre>
 
-  <h3>6.4 Python 版本不對</h3>
-  <p>如果使用 Python 3.12 或更高版本，PaddleOCR / PaddlePaddle 可能較容易遇到相容性問題。建議重新安裝 Python 3.10，並用 Python 3.10 建立 <code>.venv</code>。</p>
+  <h3>PaddleOCR 分開安裝</h3>
+  <pre><code>pip install paddlepaddle==2.6.2
+pip install paddleocr==2.7.3</code></pre>
 
-  <h3>6.5 NumPy 版本不相容</h3>
-  <p>目前專案使用 <code>numpy==1.26.4</code>。這是為了避開部分 OpenCV / PaddleOCR 與 NumPy 2.x 的相容性問題。請不要自行升級到 NumPy 2.x。</p>
+  <h3>不建議複製別人的 .venv</h3>
+  <p>虛擬環境內記錄了原電腦的路徑，換機後容易失效。請在各自電腦重新建立 <code>.venv</code>。</p>
 
-  <h3>6.6 輸出結果在哪裡</h3>
-  <p>分類後的圖片會在：</p>
-  <pre><code>project\output</code></pre>
-  <p>常見分類資料夾包含：</p>
-  <ul>
-    <li><code>Basegame</code></li>
-    <li><code>Feature game</code></li>
-    <li><code>Feature Buy</code></li>
-    <li><code>BigWin</code></li>
-    <li><code>Transition</code></li>
-    <li><code>Result</code></li>
-    <li><code>Help</code></li>
-    <li><code>loading</code></li>
-    <li><code>Other</code></li>
-    <li><code>low_score</code>：低信心或備選結果，方便人工檢查。</li>
-  </ul>
+  <h3>npm install 失敗（公司網路）</h3>
+  <p>嘗試切換網路或關閉 VPN，或使用公司內網的 npm registry。</p>
 
-  <h2>7. 給分享對象的最短安裝流程</h2>
-  <p>如果只想給同事一份最簡短的操作，可以提供下面這段：</p>
+  <h3>Python 版本確認</h3>
+  <pre><code>python --version   # 需顯示 Python 3.10.x</code></pre>
+  <p>若系統有多個 Python 版本，建立 venv 時明確指定：</p>
+  <pre><code>python3.10 -m venv .venv</code></pre>
+
+  <!-- 8. 最短安裝流程 -->
+  <h2 id="quickref">8. 最短安裝流程（對外分享版）</h2>
+  <p>給同事的最短版本：</p>
   <div class="card">
     <ol>
-      <li>把資料夾放到短路徑，例如 <code>D:\slot_classifier_figma_share_package</code>。</li>
-      <li>安裝 Python 3.10，並勾選 <strong>Add python.exe to PATH</strong>。</li>
-      <li>打開 PowerShell，切到專案資料夾。</li>
-      <li>執行 <code>python -m venv .venv</code>。</li>
-      <li>執行 <code>.\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel</code>。</li>
-      <li>執行 <code>.\.venv\Scripts\python.exe -m pip install -r requirements.txt</code>。</li>
-      <li>把影片放入 <code>project\input_videos</code>。</li>
-      <li>執行 <code>.\.venv\Scripts\python.exe app\main.py</code>。</li>
-      <li>到 <code>project\output</code> 查看結果。</li>
+      <li>把專案放到短路徑，例如 <code>D:\slot-classifier</code></li>
+      <li>安裝 Python 3.10，勾選 <strong>Add python.exe to PATH</strong></li>
+      <li>安裝 Node.js 18+</li>
+      <li>開終端，進入專案資料夾：
+        <pre><code>cd D:\slot-classifier
+git checkout perf/cpu-optimize-ocr</code></pre>
+      </li>
+      <li>建立並安裝環境：
+        <pre><code>python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt</code></pre>
+      </li>
+      <li>安裝 Claude Code：
+        <pre><code>npm install -g @anthropic/claude-code
+claude login</code></pre>
+      </li>
+      <li>把影片放入 <code>project\input_videos\</code></li>
+      <li>啟動並分析：
+        <pre><code>claude
+# 然後輸入：幫我分析 WildTrain</code></pre>
+      </li>
     </ol>
   </div>
-
   <div class="note success">
-    <strong>下一步可做：</strong>再新增 <code>.bat</code> 檔，把常用指令包成「雙擊執行」版本，例如一個執行 <code>main.py</code>，一個執行 <code>generate_symbol_table.py</code>。
+    完成以上步驟後，後續每次使用只需進入專案資料夾執行 <code>claude</code> 即可。
   </div>
+
 </main>
 </body>
 </html>
