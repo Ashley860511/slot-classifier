@@ -10,8 +10,10 @@ review_server.py — 地端 review 本機伺服器
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -55,7 +57,18 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._handle_apply_corrections()
             return
 
+        if path == "/api/save-symbol":
+            self._handle_save_symbol()
+            return
+
         self._text_response(404, "Not Found")
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
 
     # ── private helpers ──────────────────────────────────────────────────────
 
@@ -93,6 +106,50 @@ class ReviewHandler(BaseHTTPRequestHandler):
         try:
             summary = apply_corrections(payload)
             self._json_response(200, {"ok": True, **summary})
+        except Exception as e:
+            self._json_response(500, {"ok": False, "error": str(e)})
+
+    def _handle_save_symbol(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except Exception as e:
+            self._json_response(400, {"ok": False, "error": f"JSON 解析失敗：{e}"})
+            return
+
+        output_dir = payload.get("output_dir") or _OUTPUT_DIR
+        image_b64  = payload.get("image_b64", "")
+        label      = payload.get("label", "").strip()
+
+        if not image_b64:
+            self._json_response(400, {"ok": False, "error": "缺少 image_b64"})
+            return
+
+        symbols_dir = os.path.join(output_dir, "symbol_table", "symbols")
+        os.makedirs(symbols_dir, exist_ok=True)
+
+        # 找下一個可用的編號 symbol_manual_NNN.png
+        existing = [
+            f for f in os.listdir(symbols_dir)
+            if re.match(r"symbol_manual_\d+", f)
+        ]
+        nums = []
+        for f in existing:
+            m = re.search(r"symbol_manual_(\d+)", f)
+            if m:
+                nums.append(int(m.group(1)))
+        next_num = max(nums) + 1 if nums else 1
+        suffix = f"_{label}" if label else ""
+        filename = f"symbol_manual_{next_num:03d}{suffix}.png"
+        out_path = os.path.join(symbols_dir, filename)
+
+        try:
+            img_bytes = base64.b64decode(image_b64)
+            with open(out_path, "wb") as f:
+                f.write(img_bytes)
+            print(f"[Symbol] 已儲存：{out_path}")
+            self._json_response(200, {"ok": True, "filename": filename, "path": out_path})
         except Exception as e:
             self._json_response(500, {"ok": False, "error": str(e)})
 

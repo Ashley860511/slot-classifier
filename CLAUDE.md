@@ -58,11 +58,37 @@ bash classify_with_roi_confirm.sh --video-id {VIDEO_ID}
 bash classify_with_roi_confirm.sh --video-id {VIDEO_ID} --roi {x,y,w,h}
 ```
 
-### 步驟 5 — 回報結果
+### 步驟 5 — 生成審核頁與 Symbol 提取
+```bash
+# 生成截圖審核頁（含 Symbol Review 區塊）
+python app/generate_review_page.py project/output/{VIDEO_ID}
+
+# 提取 Symbol（從 Help 頁自動裁切）
+python app/generate_symbol_table.py --video-id {VIDEO_ID} --no-ai --icons-only
+```
+
+### 步驟 6 — 告知用戶開啟審核頁
 分類完成後，告知用戶：
 - 審核頁位置：`project/output/{VIDEO_ID}/review.html`
 - 各類別截圖數量（從 CSV 統計）
 - 需要人工複審的張數（needs_review 資料夾）
+
+### 步驟 7 — Symbol 審核（主動提示用戶）
+
+**這步很重要，不能省略。** 告知用戶：
+
+> review.html 底部有「Symbol 審核」區塊，請捲到最下方：
+> 1. 確認自動提取的 symbol 是否完整
+> 2. 若有遺漏（例如某個麻將牌、特殊符號），點擊下方 Help 截圖縮圖
+> 3. 在彈出的裁切工具上拖曳框選遺漏的 symbol
+> 4. 輸入名稱（選填）→「加入為 Symbol」
+>
+> 若用 `file://` 開啟，按「加入」會下載 PNG，請手動放到：
+> `project/output/{VIDEO_ID}/symbol_table/symbols/`
+
+**Claude 自己也要主動判斷：** 若 symbol 數量明顯偏少（少於 5 個）或有重複，
+主動說明可能原因（如 Help 頁只截到規則頁、paytable 滾動位置不完整），
+並建議用戶在 review.html 的 Symbol 審核區塊手動補切。
 
 ---
 
@@ -94,7 +120,12 @@ project/output/{VIDEO_ID}/
 │   ├── auto_roi_preview.jpg   # ROI 偵測預覽
 │   └── roi_adjust.html        # 互動式 ROI 調整頁
 ├── classification_result.csv  # 完整分類結果
-└── review.html                # 審核頁（瀏覽器開啟）
+├── review.html                # 審核頁（含 Symbol Review 區塊）
+└── symbol_table/
+    ├── symbols/               # 最終 symbol PNG（自動 + 手動補切）
+    │   ├── symbol_candidate_NNN_*.png   # 自動提取
+    │   └── symbol_manual_NNN*.png       # 手動補切
+    └── icon_candidates/       # 候選池（供除錯）
 ```
 
 ---

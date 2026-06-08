@@ -114,7 +114,51 @@ def build_review_cards(records: list[dict], output_dir: str, include_high: bool)
     return cards
 
 
+def load_symbol_images(output_dir: str) -> list[dict]:
+    """載入 symbol_table/symbols/ 下所有 symbol 圖。"""
+    symbols_dir = os.path.join(output_dir, "symbol_table", "symbols")
+    if not os.path.isdir(symbols_dir):
+        return []
+    result = []
+    for f in sorted(os.listdir(symbols_dir)):
+        if not f.lower().endswith((".png", ".jpg")):
+            continue
+        path = os.path.join(symbols_dir, f)
+        b64 = img_to_base64(path)
+        if b64:
+            result.append({"filename": f, "b64": b64})
+    return result
+
+
+def load_help_images(output_dir: str, max_each: int = 30) -> list[dict]:
+    """載入 Help/ 和 low_score/Help/ 的截圖供補切使用。"""
+    result = []
+    seen: set[str] = set()
+    dirs = [
+        os.path.join(output_dir, "Help"),
+        os.path.join(output_dir, "low_score", "Help"),
+    ]
+    for d in dirs:
+        if not os.path.isdir(d):
+            continue
+        files = sorted(f for f in os.listdir(d) if f.lower().endswith((".jpg", ".png")))
+        for f in files[:max_each]:
+            if f in seen:
+                continue
+            seen.add(f)
+            path = os.path.join(d, f)
+            b64 = img_to_base64(path)
+            if b64:
+                result.append({"filename": f, "b64": b64})
+    return result
+
+
 def render_html(cards: list[dict], output_dir: str, video_name: str) -> str:
+    # ── 載入 symbol 與 Help 圖 ───────────────────────────────────────────────
+    symbol_images = load_symbol_images(output_dir)
+    help_images   = load_help_images(output_dir)
+    output_dir_escaped = output_dir.replace("\\", "\\\\").replace('"', '\\"')
+
     ALL_CATEGORIES = [
         "Basegame", "Feature game", "Feature Buy", "BigWin",
         "Transition", "Result", "Help", "loading", "Other"
@@ -220,8 +264,6 @@ def render_html(cards: list[dict], output_dir: str, video_name: str) -> str:
     <button class="filter-btn" onclick="filterConf('low')" id="cf-low" style="color:#dc3545">低信心</button>
     """
 
-    output_dir_escaped = output_dir.replace("\\", "\\\\").replace('"', '\\"')
-
     return f"""<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -247,6 +289,45 @@ def render_html(cards: list[dict], output_dir: str, video_name: str) -> str:
   .card:hover {{ transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }}
   .summary {{ background: white; margin: 16px 24px 0; padding: 14px 20px;
               border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+  /* Symbol Review */
+  .sym-section {{ background:white; margin:24px 24px 0; padding:20px 24px;
+                  border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.08); }}
+  .sym-section h2 {{ font-size:16px; margin:0 0 14px 0; color:#1a1a2e; }}
+  #sym-grid {{ display:flex; flex-wrap:wrap; gap:10px; min-height:60px; }}
+  .sym-thumb {{ width:90px; text-align:center; cursor:default; }}
+  .sym-thumb img {{ width:90px; height:90px; object-fit:contain;
+                    border:1px solid #e2e8f0; border-radius:6px; background:#f8f8f8; }}
+  .help-thumb-section {{ margin-top:20px; }}
+  .help-thumb-section h3 {{ font-size:14px; color:#555; margin:0 0 10px 0; }}
+  #help-thumb-row {{ display:flex; gap:10px; overflow-x:auto; padding-bottom:8px; }}
+  .help-thumb {{ width:160px; flex-shrink:0; text-align:center; cursor:pointer; }}
+  .help-thumb img {{ width:160px; height:90px; object-fit:cover;
+                     border:2px solid #e2e8f0; border-radius:6px; transition:.15s; }}
+  .help-thumb:hover img {{ border-color:#2563eb; transform:scale(1.03); }}
+  /* Crop modal */
+  #crop-modal {{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
+                 z-index:1000; align-items:center; justify-content:center; }}
+  .crop-modal-inner {{ background:#1a1a2e; border-radius:10px; padding:16px;
+                        max-width:95vw; max-height:95vh; display:flex; gap:16px;
+                        flex-direction:column; overflow:hidden; }}
+  .crop-modal-top {{ display:flex; gap:16px; overflow:hidden; flex:1; min-height:0; }}
+  .crop-canvas-wrap {{ flex:1; overflow:auto; min-width:0; }}
+  #crop-canvas {{ display:block; max-width:100%; cursor:crosshair; }}
+  .crop-sidebar {{ width:200px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; }}
+  #crop-preview {{ display:none; flex-direction:column; gap:6px; align-items:center; }}
+  #crop-preview img {{ max-width:180px; max-height:180px; object-fit:contain;
+                        border:1px solid #444; border-radius:4px; background:#111; }}
+  .crop-sidebar label {{ font-size:12px; color:#aaa; margin-bottom:2px; display:block; }}
+  .crop-sidebar input {{ width:100%; box-sizing:border-box; background:#111;
+                          border:1px solid #444; border-radius:4px; color:#eee;
+                          font-size:13px; padding:5px 8px; }}
+  .crop-modal-btns {{ display:flex; gap:8px; justify-content:flex-end; }}
+  .btn-save-sym {{ background:linear-gradient(135deg,#00c97a,#00ff88); color:#000;
+                   border:none; border-radius:6px; padding:9px 20px; font-size:14px;
+                   font-weight:bold; cursor:pointer; }}
+  .btn-save-sym:disabled {{ opacity:.4; cursor:not-allowed; }}
+  .btn-cancel-modal {{ background:transparent; border:1px solid #555; color:#aaa;
+                        border-radius:6px; padding:9px 16px; font-size:14px; cursor:pointer; }}
   .correction-bar {{ display:flex; gap:6px; padding:8px 10px; border-top:1px solid #f0f0f0; align-items:center; }}
   .btn-accept {{ background:#e8f5e9; border:1px solid #c8e6c9; border-radius:4px; cursor:pointer; font-size:11px; padding:3px 8px; }}
   .btn-accept.active {{ background:#28a745; color:white; }}
@@ -282,6 +363,51 @@ def render_html(cards: list[dict], output_dir: str, video_name: str) -> str:
 
 <div class="grid" id="card-grid">
 {card_html}
+</div>
+
+<!-- Symbol Review Section -->
+<div class="sym-section">
+  <h2>&#x1F3B0; Symbol 審核（{len(symbol_images)} 個已提取）</h2>
+  <div id="sym-grid"></div>
+  <div class="help-thumb-section">
+    <h3>&#x1F4F8; 從 Help 截圖補切遺漏的 Symbol — 點擊縮圖開啟裁切工具</h3>
+    <div id="help-thumb-row"></div>
+  </div>
+</div>
+
+<!-- Crop Modal -->
+<div id="crop-modal">
+  <div class="crop-modal-inner">
+    <div style="color:#7ecfff;font-size:14px;font-weight:bold">
+      &#x1F3AF; 拖曳框選要裁出的 Symbol &nbsp;
+      <span style="color:#888;font-weight:normal;font-size:12px">（可重複拖曳調整）</span>
+    </div>
+    <div class="crop-modal-top">
+      <div class="crop-canvas-wrap">
+        <canvas id="crop-canvas"></canvas>
+      </div>
+      <div class="crop-sidebar">
+        <div id="crop-preview">
+          <div style="font-size:12px;color:#aaa">預覽裁切結果</div>
+          <img id="crop-preview-img" src="" alt="preview">
+        </div>
+        <div>
+          <label>Symbol 名稱（選填）</label>
+          <input id="crop-label" type="text" placeholder="例：8wan、scatter">
+        </div>
+        <div style="font-size:11px;color:#666;margin-top:4px">
+          儲存後自動命名為<br>
+          <code style="color:#aaa">symbol_manual_NNN.png</code>
+        </div>
+      </div>
+    </div>
+    <div class="crop-modal-btns">
+      <button class="btn-cancel-modal" onclick="closeCropModal()">取消</button>
+      <button class="btn-save-sym" id="sym-save-btn" onclick="saveSymbol()" disabled>
+        &#x2705; 加入為 Symbol
+      </button>
+    </div>
+  </div>
 </div>
 
 <div id="action-bar">
@@ -416,6 +542,212 @@ function applyCorrections() {{
     }} else {{
       prompt('請複製以下 JSON 並貼到 chat：', jsonStr);
     }}
+  }}
+}}
+
+// ── Symbol Review ──────────────────────────────────────────────────────────
+
+const SYMBOL_META = {{
+  output_dir: "{output_dir_escaped}",
+  symbols_dir: "{output_dir_escaped}\\\\symbol_table\\\\symbols",
+}};
+
+// 初始 symbol 清單（頁面載入時嵌入）
+let symbolList = {json.dumps(symbol_images)};
+// Help 截圖清單
+const helpImages = {json.dumps(help_images)};
+
+let cropState = null;  // {{ img, startX, startY, endX, endY, dragging }}
+let activeHelpIdx = null;
+
+function initSymbolReview() {{
+  renderSymbolGrid();
+  renderHelpThumbs();
+}}
+
+function renderSymbolGrid() {{
+  const grid = document.getElementById('sym-grid');
+  if (!grid) return;
+  if (symbolList.length === 0) {{
+    grid.innerHTML = '<p style="color:#888;font-size:13px">尚無 symbol — 從下方 Help 截圖補切</p>';
+    return;
+  }}
+  grid.innerHTML = symbolList.map(function(s, i) {{
+    return '<div class="sym-thumb" title="' + s.filename + '">'
+         + '<img src="data:image/png;base64,' + s.b64 + '">'
+         + '<div style="font-size:9px;color:#aaa;word-break:break-all;margin-top:3px">' + s.filename + '</div>'
+         + '</div>';
+  }}).join('');
+}}
+
+function renderHelpThumbs() {{
+  const row = document.getElementById('help-thumb-row');
+  if (!row) return;
+  if (helpImages.length === 0) {{
+    row.innerHTML = '<p style="color:#888;font-size:13px">找不到 Help 截圖</p>';
+    return;
+  }}
+  row.innerHTML = helpImages.map(function(h, i) {{
+    return '<div class="help-thumb" onclick="openCropModal(' + i + ')" title="' + h.filename + '">'
+         + '<img src="data:image/jpeg;base64,' + h.b64 + '">'
+         + '<div style="font-size:9px;color:#aaa;margin-top:3px">' + h.filename + '</div>'
+         + '</div>';
+  }}).join('');
+}}
+
+function openCropModal(idx) {{
+  activeHelpIdx = idx;
+  const modal = document.getElementById('crop-modal');
+  const canvas = document.getElementById('crop-canvas');
+  const img = new Image();
+  img.onload = function() {{
+    canvas.width  = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    cropState = {{ img: img, startX:0, startY:0, endX:0, endY:0, dragging:false, drawn:false }};
+    document.getElementById('crop-preview').style.display = 'none';
+    document.getElementById('crop-label').value = '';
+    document.getElementById('sym-save-btn').disabled = true;
+  }};
+  img.src = 'data:image/jpeg;base64,' + helpImages[idx].b64;
+  modal.style.display = 'flex';
+}}
+
+function closeCropModal() {{
+  document.getElementById('crop-modal').style.display = 'none';
+  cropState = null;
+  activeHelpIdx = null;
+}}
+
+function getCanvasPos(canvas, e) {{
+  const r = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / r.width;
+  const scaleY = canvas.height / r.height;
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return {{ x: (clientX - r.left) * scaleX, y: (clientY - r.top) * scaleY }};
+}}
+
+function drawCropOverlay() {{
+  if (!cropState || !cropState.drawn) return;
+  const canvas = document.getElementById('crop-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(cropState.img, 0, 0);
+
+  const x1 = Math.min(cropState.startX, cropState.endX);
+  const y1 = Math.min(cropState.startY, cropState.endY);
+  const w  = Math.abs(cropState.endX - cropState.startX);
+  const h  = Math.abs(cropState.endY - cropState.startY);
+
+  // 半透明遮罩
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(x1, y1, w, h);
+  ctx.drawImage(cropState.img, x1, y1, w, h, x1, y1, w, h);
+
+  // 框線
+  ctx.strokeStyle = '#00ff88';
+  ctx.lineWidth = Math.max(2, canvas.width / 300);
+  ctx.strokeRect(x1, y1, w, h);
+
+  // 尺寸標籤
+  ctx.font = 'bold ' + Math.max(14, canvas.width / 60) + 'px monospace';
+  const label = Math.round(w) + ' x ' + Math.round(h);
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = 'rgba(0,255,136,0.85)';
+  ctx.fillRect(x1, y1 + h + 4, tw + 12, 22);
+  ctx.fillStyle = '#000';
+  ctx.fillText(label, x1 + 6, y1 + h + 20);
+
+  updateCropPreview(x1, y1, w, h);
+}}
+
+function updateCropPreview(x1, y1, w, h) {{
+  if (w < 10 || h < 10) return;
+  const offscreen = document.createElement('canvas');
+  offscreen.width  = w;
+  offscreen.height = h;
+  offscreen.getContext('2d').drawImage(cropState.img, x1, y1, w, h, 0, 0, w, h);
+  const previewImg = document.getElementById('crop-preview-img');
+  previewImg.src = offscreen.toDataURL('image/png');
+  document.getElementById('crop-preview').style.display = 'flex';
+  document.getElementById('sym-save-btn').disabled = false;
+  cropState.cropB64 = offscreen.toDataURL('image/png').split(',')[1];
+}}
+
+(function setupCropCanvas() {{
+  document.addEventListener('DOMContentLoaded', function() {{
+    const canvas = document.getElementById('crop-canvas');
+    if (!canvas) return;
+
+    function onDown(e) {{
+      if (!cropState) return;
+      e.preventDefault();
+      const p = getCanvasPos(canvas, e);
+      cropState.startX = p.x; cropState.startY = p.y;
+      cropState.endX   = p.x; cropState.endY   = p.y;
+      cropState.dragging = true; cropState.drawn = true;
+    }}
+    function onMove(e) {{
+      if (!cropState || !cropState.dragging) return;
+      e.preventDefault();
+      const p = getCanvasPos(canvas, e);
+      cropState.endX = p.x; cropState.endY = p.y;
+      drawCropOverlay();
+    }}
+    function onUp(e) {{
+      if (!cropState) return;
+      cropState.dragging = false;
+      drawCropOverlay();
+    }}
+    canvas.addEventListener('mousedown',  onDown);
+    canvas.addEventListener('mousemove',  onMove);
+    canvas.addEventListener('mouseup',    onUp);
+    canvas.addEventListener('touchstart', onDown, {{passive:false}});
+    canvas.addEventListener('touchmove',  onMove, {{passive:false}});
+    canvas.addEventListener('touchend',   onUp);
+
+    initSymbolReview();
+  }});
+}})();
+
+function saveSymbol() {{
+  if (!cropState || !cropState.cropB64) return;
+  const label = document.getElementById('crop-label').value.trim();
+  const payload = {{
+    output_dir: SYMBOL_META.output_dir,
+    image_b64:  cropState.cropB64,
+    label:      label,
+  }};
+
+  const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (isLocal) {{
+    fetch('/api/save-symbol', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify(payload),
+    }}).then(function(r) {{ return r.json(); }}).then(function(data) {{
+      if (data.ok) {{
+        // 立刻加到 symbol grid
+        symbolList.push({{ filename: data.filename, b64: cropState.cropB64 }});
+        renderSymbolGrid();
+        closeCropModal();
+        alert('[OK] 已儲存：' + data.filename);
+      }} else {{
+        alert('[錯誤] ' + data.error);
+      }}
+    }}).catch(function(e) {{ alert('錯誤：' + e); }});
+  }} else {{
+    // 非 localhost：提示下載
+    const a = document.createElement('a');
+    const suffix = label ? '_' + label : '';
+    a.download = 'symbol_manual' + suffix + '.png';
+    a.href = 'data:image/png;base64,' + cropState.cropB64;
+    a.click();
+    alert('已下載！請把檔案放到 symbol_table/symbols/ 資料夾');
+    closeCropModal();
   }}
 }}
 
