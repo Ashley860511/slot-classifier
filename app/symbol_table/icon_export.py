@@ -568,6 +568,12 @@ def _reject_full_page_text_fragment(rec: dict[str, Any], img) -> tuple[bool, str
     full_page_like = (
         (source_w >= 950 and source_h >= 780)
         or (source_h >= 850 and source_h >= source_w * 1.35)
+        or (
+            source_w >= 950
+            and source_h >= 520
+            and source_w >= source_h * 1.45
+            and str(rec.get("source_crop_kind") or "") == "legacy_full_page"
+        )
     )
     if not full_page_like:
         return False, "ok"
@@ -582,6 +588,14 @@ def _reject_full_page_text_fragment(rec: dict[str, Any], img) -> tuple[bool, str
     bbox = stats["bbox"]
     bbox_aspect = float(stats["bbox_aspect"])
     crop_aspect = img.width / max(1.0, float(img.height))
+    try:
+        import numpy as np
+        arr = np.array(img.convert("RGB"), dtype=np.uint8)
+        bright = arr.mean(axis=2)
+        chroma = arr.max(axis=2) - arr.min(axis=2)
+        white_tile_ratio = float(((bright > 145) & (chroma < 52)).mean())
+    except Exception:
+        white_tile_ratio = 0.0
 
     # Thin text rows such as "SYMBOL", "3 - 36.00", or explanatory sentences.
     if bbox[3] <= max(30, img.height * 0.45) and bbox_aspect >= 1.55 and text_ratio >= 0.035:
@@ -592,6 +606,30 @@ def _reject_full_page_text_fragment(rec: dict[str, Any], img) -> tuple[bool, str
     # Wide crops with a small icon plus adjacent sentence/label text.
     if crop_aspect >= 1.55 and text_ratio >= 0.09 and colour_ratio < 0.30:
         return True, "final_full_page_label_bleed"
+
+    # Payout value blocks on dark Help backgrounds are mostly yellow/white text.
+    # Run this before the tile-card allowance because a cropped payout panel can
+    # otherwise look like a bright rectangular card.
+    if text_ratio >= 0.24 and colour_ratio <= 0.12:
+        return True, "final_full_page_text_dominant_panel"
+    if text_ratio >= 0.14 and colour_ratio <= 0.14 and text_ratio >= colour_ratio * 1.25:
+        return True, "final_full_page_payout_text_panel"
+
+    is_full_tile_card = (
+        0.55 <= crop_aspect <= 1.75
+        and fg_ratio >= 0.30
+        and white_tile_ratio >= 0.22
+        and colour_ratio >= 0.030
+        and bbox[2] >= img.width * 0.55
+        and bbox[3] >= img.height * 0.55
+    )
+    if is_full_tile_card:
+        return False, "ok_full_tile_card"
+
+    if fg_ratio < 0.025 and crop_aspect >= 1.25:
+        return True, "final_full_page_sparse_background_text"
+    if fg_ratio < 0.055 and max(img.width, img.height) >= 140:
+        return True, "final_full_page_background_fragment"
 
     # Low-art foreground dominated by text colours.  Real A/K/Q/J/10 symbols
     # have much denser colourful artwork, so this avoids removing letter icons.
@@ -625,6 +663,11 @@ def _final_quality_rank(rec: dict[str, Any]) -> tuple[float, float, float, str]:
         + score * 0.14
         - edge_penalty
     )
+    if str(rec.get("source_crop_kind") or "") == "mahjong_tile":
+        tile_h_bonus = min(1.0, h / 190.0) * 0.26
+        tile_w_bonus = min(1.0, w / 180.0) * 0.10
+        short_tile_penalty = 0.32 if h < 180 else 0.0
+        completeness += tile_h_bonus + tile_w_bonus - short_tile_penalty
     return (completeness, score, content_ratio, str(rec.get("candidate_id", "")))
 
 
@@ -848,11 +891,20 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
     records: list[dict[str, Any]] = []
     for idx, img in enumerate(icon_images):
         trusted_pp_crop = _is_trusted_pp_paytable_crop_info(img.info)
+        mahjong_tile_crop = str(img.info.get("source_crop_kind") or "") == "mahjong_tile"
         rejected, reject_reason = _reject_text_only_candidate(img)
+        if rejected and mahjong_tile_crop and reject_reason in {"text_only", "flat_symbol_fragment", "small_text_fragment"}:
+            rejected = False
+            reject_reason = "ok_mahjong_tile_crop"
         if rejected:
             continue
         metrics = _image_metrics(img)
         rejected, quality_reason = _reject_low_quality_icon(metrics)
+        if rejected and mahjong_tile_crop and quality_reason in {
+            "low_score", "edge_clipped", "likely_clipped", "too_small",
+        }:
+            rejected = False
+            quality_reason = "ok_mahjong_tile_crop"
         if rejected and _allow_primary_paytable_edge_icon(img.info, metrics, quality_reason):
             rejected = False
             quality_reason = "ok_primary_paytable_edge_icon"
@@ -891,6 +943,18 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
     for rec in records:
         final_rejected, final_reason = _reject_final_symbol_candidate(rec.get("metrics", {}))
         trusted_pp_crop = bool(rec.get("trusted_pp_paytable_crop"))
+        mahjong_tile_crop = str(rec.get("source_crop_kind") or "") == "mahjong_tile"
+        if mahjong_tile_crop:
+            crop_box = rec.get("source_crop_box") or []
+            if isinstance(crop_box, (list, tuple)) and len(crop_box) >= 2 and int(crop_box[1] or 0) <= 1:
+                final_rejected = True
+                final_reason = "final_mahjong_tile_source_edge_clipped"
+        if final_rejected and mahjong_tile_crop and final_reason in {
+            "final_low_score", "final_edge_clipped", "final_likely_clipped",
+            "final_full_rect_fragment", "final_too_small",
+        }:
+            final_rejected = False
+            final_reason = "ok_mahjong_tile_crop"
         if final_rejected and trusted_pp_crop and final_reason in {
             "final_low_score", "final_edge_clipped", "final_likely_clipped",
             "final_full_rect_fragment", "final_too_small",
@@ -914,6 +978,14 @@ def export_icon_crops(icon_images: list, symbol_table_dir: Path) -> dict[str, An
                         bleed_rejected, bleed_reason = _reject_full_page_text_fragment(rec, rec_img)
                     if not bleed_rejected:
                         bleed_rejected, bleed_reason = _reject_portrait_fragment(rec)
+                    if bleed_rejected and mahjong_tile_crop and bleed_reason in {
+                        "final_payout_text_bleed",
+                        "final_full_page_text_dominant_panel",
+                        "final_full_page_payout_text_panel",
+                        "final_full_page_text_fragment",
+                    }:
+                        bleed_rejected = False
+                        bleed_reason = "ok_mahjong_tile_crop"
                 if bleed_rejected:
                     final_rejected = True
                     final_reason = bleed_reason

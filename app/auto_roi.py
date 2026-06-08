@@ -197,6 +197,97 @@ def find_portrait_game_column(content_mask, edge_mask, current_x1, current_x2):
     return max(0, run_start - pad), min(w - 1, run_end + pad)
 
 
+def constrain_browser_portrait_box(x1, y1, x2, y2, frame_w, frame_h):
+    """
+    Keep a portrait mobile game centered inside a landscape browser capture.
+
+    Some games have saturated animated side art outside the phone viewport.  The
+    motion bbox then grows left/right and later symbol crops inherit that offset.
+    When the detected portrait box is wider than a normal phone viewport, shrink
+    it around the screen center while preserving the detected vertical extent.
+    """
+    if frame_w <= 0 or frame_h <= 0:
+        return x1, y1, x2, y2
+    if frame_w / float(max(1, frame_h)) <= 1.4:
+        return x1, y1, x2, y2
+
+    current_w = max(1, x2 - x1 + 1)
+    current_h = max(1, y2 - y1 + 1)
+    width_ratio = current_w / float(frame_w)
+    if width_ratio <= AUTO_ROI_MAX_WIDTH_RATIO:
+        return x1, y1, x2, y2
+
+    min_w = max(1, int(round(frame_w * AUTO_ROI_MIN_WIDTH_RATIO)))
+    max_w = max(min_w, int(round(frame_w * 0.32)))
+    target_w = int(round(current_h * 0.48))
+    target_w = max(min_w, min(max_w, target_w, current_w))
+    if target_w >= current_w:
+        return x1, y1, x2, y2
+
+    motion_center = (x1 + x2) / 2.0
+    screen_center = frame_w / 2.0
+    if abs(motion_center - screen_center) <= frame_w * 0.16:
+        center = screen_center * 0.82 + motion_center * 0.18
+    else:
+        center = motion_center
+
+    nx1 = int(round(center - target_w / 2.0))
+    nx1 = max(0, min(nx1, frame_w - target_w))
+    return nx1, y1, nx1 + target_w - 1, y2
+
+
+def refine_browser_portrait_top(frame, rx, ry, rw, rh):
+    """
+    Trim browser chrome/bookmark rows above a portrait game embedded in a wide capture.
+
+    A fixed top ratio is fragile across Chrome layouts.  FortuneMahjong-style
+    recordings can leave the bookmark bar inside the ROI, so use the first
+    sustained saturated/dark row inside the detected portrait column as the
+    actual game canvas top.
+    """
+    H, W = frame.shape[:2]
+    if W <= 0 or H <= 0 or rw <= 0 or rh <= 0:
+        return rx, ry, rw, rh
+    if W / float(max(1, H)) <= 1.4:
+        return rx, ry, rw, rh
+    if rw / float(max(1, W)) > 0.45 or rh / float(max(1, H)) < 0.55:
+        return rx, ry, rw, rh
+    if ry >= int(round(H * 0.16)):
+        return rx, ry, rw, rh
+
+    x1 = max(0, int(rx + rw * 0.04))
+    x2 = min(W, int(rx + rw * 0.96))
+    y_start = max(0, int(ry))
+    y_limit = min(H, int(max(ry + 1, min(ry + rh * 0.22, H * 0.22))))
+    if x2 <= x1 or y_limit <= y_start + 4:
+        return rx, ry, rw, rh
+
+    roi = frame[y_start:y_limit, x1:x2]
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    sat = hsv[:, :, 1]
+    val = hsv[:, :, 2]
+    saturated = (sat > 55) & (val > 45)
+    dark_content = gray < 218
+    row_score = saturated.mean(axis=1) * 0.70 + dark_content.mean(axis=1) * 0.30
+    row_score = smooth_1d(row_score.astype(np.float32), kernel_size=7)
+
+    threshold = max(0.18, float(np.percentile(row_score, 88)) * 0.55)
+    active = row_score >= threshold
+    min_run = max(3, int(round(H * 0.004)))
+    for idx in range(0, max(0, len(active) - min_run + 1)):
+        if bool(np.all(active[idx:idx + min_run])):
+            new_ry = y_start + idx
+            if new_ry > ry + 3:
+                bottom = ry + rh
+                ry = min(new_ry, H - 1)
+                rh = max(1, bottom - ry)
+            break
+
+    return rx, ry, rw, rh
+
+
 def find_landscape_game_box(content_mask, motion_box):
     h, w = content_mask.shape[:2]
     mx, my, mw, mh = motion_box
@@ -411,6 +502,7 @@ def auto_detect_game_area(video_path, debug_dir=None):
         x2 = min(small_w - 1, mx + mw + x_extra)
         y1 = max(0, my - y_extra)
         y2 = min(small_h - 1, my + mh + y_extra)
+        x1, y1, x2, y2 = constrain_browser_portrait_box(x1, y1, x2, y2, small_w, small_h)
     elif (
         AUTO_ROI_TIGHTEN_PORTRAIT_COLUMN
         and (
@@ -469,6 +561,14 @@ def auto_detect_game_area(video_path, debug_dir=None):
             bottom = ry + rh
             ry = min(browser_top, H - 1)
             rh = max(1, bottom - ry)
+
+    rx, ry, rw, rh = refine_browser_portrait_top(
+        frames[len(frames) // 2],
+        rx,
+        ry,
+        rw,
+        rh,
+    )
 
     if debug_dir and SAVE_ROI_DEBUG_IMAGE:
         os.makedirs(debug_dir, exist_ok=True)

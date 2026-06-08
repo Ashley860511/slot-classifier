@@ -135,6 +135,71 @@ def _dedupe_boxes(boxes, iou_threshold=0.42, image=None):
     return sorted(kept, key=lambda b: (b[1], b[0]))
 
 
+def detect_mahjong_tile_boxes_in_dialog(dialog_img) -> list:
+    """Detect full white mahjong-style symbol tiles before component splitting."""
+    if Image is None:
+        return []
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return []
+
+    arr = np.array(dialog_img.convert("RGB"), dtype=np.uint8)
+    H, W = arr.shape[:2]
+    if W < 900 or H < 500:
+        return []
+
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    white_tile = (bright > 145) & (chroma < 52)
+    white_tile[: int(H * 0.10), :] = False
+    white_tile[int(H * 0.94) :, :] = False
+    white_tile = cv2.morphologyEx(
+        white_tile.astype("uint8") * 255,
+        cv2.MORPH_CLOSE,
+        np.ones((5, 5), np.uint8),
+        iterations=1,
+    )
+
+    num, _labels, stats, _centroids = cv2.connectedComponentsWithStats(white_tile, 8)
+    boxes = []
+    min_area = max(1400, int(W * H * 0.004))
+    max_area = int(W * H * 0.055)
+    for idx in range(1, num):
+        x, y, w, h, area = [int(v) for v in stats[idx]]
+        if area < min_area or area > max_area:
+            continue
+        if w < W * 0.045 or h < H * 0.070:
+            continue
+        if w > W * 0.24 or h > H * 0.28:
+            continue
+        aspect = w / max(h, 1)
+        if not (0.58 <= aspect <= 2.15):
+            continue
+
+        crop = arr[y:y + h, x:x + w]
+        crop_b = crop.mean(axis=2)
+        crop_c = crop.max(axis=2) - crop.min(axis=2)
+        white_ratio = float(((crop_b > 145) & (crop_c < 52)).mean())
+        colour_ratio = float(((crop_c > 42) & (crop_b > 35)).mean())
+        if white_ratio < 0.20 or colour_ratio < 0.015:
+            continue
+
+        pad = max(4, int(round(min(w, h) * 0.045)))
+        x1 = max(0, x - pad)
+        y1 = max(0, y - pad)
+        x2 = min(W, x + w + pad)
+        y2 = min(H, y + h + pad)
+        boxes.append((x1, y1, x2 - x1, y2 - y1))
+
+    boxes = _dedupe_boxes(boxes, iou_threshold=0.25, image=dialog_img)
+    if len(boxes) >= 3:
+        print(f"    Mahjong tile detector found {len(boxes)} full-tile candidates")
+        return boxes
+    return []
+
+
 def _merge_stacked_symbol_boxes(boxes, image_w, image_h):
     """Merge vertically split symbol art, such as a bonus vessel plus its label."""
     merged = []
@@ -650,6 +715,11 @@ def detect_icons_in_dialog(dialog_img) -> list:
     grid detector remains as a fallback and?? path for compact two-column PG
     paytables where symbols are arranged in strict rows.
     """
+    mahjong_tile_boxes = detect_mahjong_tile_boxes_in_dialog(dialog_img)
+    if mahjong_tile_boxes:
+        print(f"    Using {len(mahjong_tile_boxes)} mahjong tile candidates")
+        return mahjong_tile_boxes
+
     component_boxes = detect_icon_components_in_dialog(dialog_img)
     grid_boxes = []
 
@@ -1888,8 +1958,123 @@ def postprocess_icon_crop(icon_img, prefer_dominant_color_cleanup=False):
     return icon_img
 
 
+def crop_to_mahjong_tile_card(icon_img, margin=8):
+    """Keep a whole white mahjong-style tile instead of only its inner artwork."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return None
+
+    if icon_img.width < 70 or icon_img.height < 70:
+        return None
+
+    arr = np.array(icon_img.convert("RGB"), dtype=np.uint8)
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    white_tile = (bright > 145) & (chroma < 52)
+    white_tile = cv2.morphologyEx(
+        white_tile.astype("uint8") * 255,
+        cv2.MORPH_CLOSE,
+        np.ones((3, 3), np.uint8),
+        iterations=1,
+    )
+
+    n, _labels, stats, centroids = cv2.connectedComponentsWithStats(white_tile, 8)
+    comps = []
+    for idx in range(1, n):
+        x, y, w, h, area = [int(v) for v in stats[idx]]
+        if area < max(900, int(icon_img.width * icon_img.height * 0.08)):
+            continue
+        if w < 55 or h < 55:
+            continue
+        aspect = w / max(h, 1)
+        if not (0.55 <= aspect <= 2.10):
+            continue
+        cx, cy = centroids[idx]
+        center_penalty = (
+            abs(cx - icon_img.width * 0.42) / max(icon_img.width, 1)
+            + abs(cy - icon_img.height * 0.50) / max(icon_img.height, 1)
+        )
+        comps.append((area * (1.0 - min(center_penalty, 0.65)), x, y, w, h))
+
+    if not comps:
+        return None
+
+    _score, x, y, w, h = max(comps, key=lambda item: item[0])
+    pad = max(4, int(round(min(w, h) * 0.045)), int(margin))
+    x1 = max(0, x - pad)
+    y1 = max(0, y - pad)
+    x2 = min(icon_img.width, x + w + pad)
+    y2 = min(icon_img.height, y + h + pad)
+    if x2 - x1 < 64 or y2 - y1 < 64:
+        return None
+    return icon_img.crop((x1, y1, x2, y2))
+
+
+def find_mahjong_tile_source_crop_box(source_img, box, margin=8):
+    """Find the full white tile in the source image that contains a detected component."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return None
+
+    bx, by, bw, bh = [int(v) for v in box]
+    cx = bx + bw / 2.0
+    cy = by + bh / 2.0
+    arr = np.array(source_img.convert("RGB"), dtype=np.uint8)
+    bright = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    white_tile = (bright > 145) & (chroma < 52)
+    white_tile = cv2.morphologyEx(
+        white_tile.astype("uint8") * 255,
+        cv2.MORPH_CLOSE,
+        np.ones((3, 3), np.uint8),
+        iterations=1,
+    )
+
+    n, _labels, stats, _centroids = cv2.connectedComponentsWithStats(white_tile, 8)
+    candidates = []
+    for idx in range(1, n):
+        x, y, w, h, area = [int(v) for v in stats[idx]]
+        if area < max(900, int(source_img.width * source_img.height * 0.0025)):
+            continue
+        if w < 55 or h < 55:
+            continue
+        aspect = w / max(h, 1)
+        if not (0.55 <= aspect <= 2.10):
+            continue
+        pad = max(8, int(round(min(w, h) * 0.10)))
+        contains_center = (x - pad) <= cx <= (x + w + pad) and (y - pad) <= cy <= (y + h + pad)
+        if not contains_center:
+            continue
+        overlap_x = max(0, min(x + w, bx + bw) - max(x, bx))
+        overlap_y = max(0, min(y + h, by + bh) - max(y, by))
+        overlap = overlap_x * overlap_y
+        center_penalty = abs(cx - (x + w / 2.0)) / max(w, 1) + abs(cy - (y + h / 2.0)) / max(h, 1)
+        candidates.append((overlap + area * (1.0 - min(center_penalty, 0.75)), x, y, w, h))
+
+    if not candidates:
+        return None
+
+    _score, x, y, w, h = max(candidates, key=lambda item: item[0])
+    pad = max(4, int(round(min(w, h) * 0.045)), int(margin))
+    x1 = max(0, x - pad)
+    y1 = max(0, y - pad)
+    x2 = min(source_img.width, x + w + pad)
+    y2 = min(source_img.height, y + h + pad)
+    if x2 - x1 < 64 or y2 - y1 < 64:
+        return None
+    return x1, y1, x2, y2
+
+
 def postprocess_full_page_icon_crop(icon_img):
     """Conservative legacy cleanup for full-page help/paytable layouts."""
+    tile = crop_to_mahjong_tile_card(icon_img)
+    if tile is not None:
+        return tile
+
     icon_img = tight_crop_content(icon_img, bg_threshold=35)
 
     candidate = trim_disconnected_right_noise(icon_img)
@@ -2916,6 +3101,7 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                 # the detected box as an artwork hint and expand around its
                 # centre before cleanup trims payout text or empty background.
                 use_full_page_crop = use_legacy_full_page_crop(source.width, source.height)
+                used_mahjong_tile_crop = False
                 if is_pp_scatter_paytable_box((bx, by, bw, bh)):
                     pad = 4
                     x1 = max(0, bx - pad)
@@ -2931,9 +3117,14 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                         (bx, by, bw, bh), source.width, source.height
                     )
                 elif use_full_page_crop:
-                    x1, y1, x2, y2 = legacy_full_page_crop_box(
-                        (bx, by, bw, bh), source.width, source.height
-                    )
+                    tile_crop_box = find_mahjong_tile_source_crop_box(source, (bx, by, bw, bh))
+                    if tile_crop_box:
+                        x1, y1, x2, y2 = tile_crop_box
+                        used_mahjong_tile_crop = True
+                    else:
+                        x1, y1, x2, y2 = legacy_full_page_crop_box(
+                            (bx, by, bw, bh), source.width, source.height
+                        )
                 else:
                     x1, y1, x2, y2 = expand_icon_crop_box(
                         (bx, by, bw, bh), source.width, source.height
@@ -2960,6 +3151,13 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                 elif is_portrait_stacked_logo_box((bx, by, bw, bh), source.width, source.height):
                     source_crop_kind = "portrait_stacked_logo"
                     icon_img = postprocess_stacked_logo_crop(icon_img)
+                elif used_mahjong_tile_crop:
+                    source_crop_kind = "mahjong_tile"
+                    tile_img = crop_to_mahjong_tile_card(icon_img)
+                    if tile_img is not None:
+                        icon_img = tile_img
+                    else:
+                        icon_img = tight_crop_content(icon_img, bg_threshold=35, margin=3)
                 elif use_full_page_crop:
                     source_crop_kind = "legacy_full_page"
                     icon_img = postprocess_full_page_icon_crop(icon_img)
@@ -2979,7 +3177,7 @@ def process_video(video_dir: Path, api_key: str, no_ai: bool, debug: bool = Fals
                 ok, reject_reason = validate_icon_candidate(icon_img)
                 if (
                     not ok
-                    and source_crop_kind == "portrait_paytable_card"
+                    and source_crop_kind in {"portrait_paytable_card", "mahjong_tile"}
                     and reject_reason in {"text_block", "flat_symbol_fragment", "small_text_fragment"}
                     and icon_img.width >= 58
                     and icon_img.height >= 58
