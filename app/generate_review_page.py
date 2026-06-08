@@ -325,7 +325,7 @@ function setAction(frameIdx, action, btn) {{
     corrections[frameIdx] = {{ action: 'accept', save_path: savePath, original_category: originalCategory }};
     if (statusEl) statusEl.textContent = '已標記：正確';
   }} else if (action === 'exclude') {{
-    corrections[frameIdx] = {{ action: 'exclude', save_path: savePath, original_category: originalCategory }};
+    corrections[frameIdx] = {{ action: 'exclude', frame_idx: parseInt(frameIdx), save_path: savePath, original_category: originalCategory }};
     if (statusEl) statusEl.textContent = '已標記：排除';
   }}
   updateCounter();
@@ -352,10 +352,10 @@ function setReclassify(frameIdx, select) {{
 
   corrections[frameIdx] = {{
     action: 'reclassify',
-    new_category: newCat,
+    frame_idx: parseInt(frameIdx),
     save_path: savePath,
     original_category: originalCategory,
-    frame_idx: frameIdx,
+    new_category: newCat,
   }};
   if (statusEl) statusEl.textContent = '已標記：改為 ' + newCat;
   updateCounter();
@@ -391,7 +391,6 @@ function applyCorrections() {{
   }}
 
   const payload = {{
-    video_id: REVIEW_META.video_id,
     output_dir: REVIEW_META.output_dir,
     corrections: toApply,
   }};
