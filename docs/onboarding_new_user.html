@@ -305,37 +305,16 @@ cd slot-classifier</code></pre>
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-body">
-        <strong>建立虛擬環境並安裝套件</strong>
-        <pre><code># macOS / Linux
-python3.10 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt
-
-# Windows PowerShell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt</code></pre>
-        <p>安裝時間約 5～15 分鐘（PaddleOCR 套件較大）。</p>
-        <div class="note warn">
-          Windows PowerShell 若出現「無法載入 .ps1」：先執行
-          <code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>
-        </div>
+        <strong>一鍵安裝 Python 環境</strong>
+        <p>在 slot-classifier 資料夾內開啟終端機，執行：</p>
+        <pre><code>python setup.py</code></pre>
+        <p>腳本會自動完成：.venv 建立 → 套件安裝（約 5～15 分鐘）→ 環境驗證 → 目錄初始化。看到 <code>✅ 環境安裝完成</code> 即完成。</p>
+        <div class="note warn">Windows 使用者：若出現錯誤，確認專案在短路徑（如 <code>D:\slot-classifier</code>）再重試。</div>
       </div>
     </div>
 
     <div class="step">
       <div class="step-num">4</div>
-      <div class="step-body">
-        <strong>確認 Python 環境正常</strong>
-        <pre><code>python check_environment.py</code></pre>
-        <p>看到各套件版本無誤即完成。</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-num">5</div>
       <div class="step-body">
         <strong>安裝 Node.js（Claude Code 前置）</strong>
         <p>前往 <a href="https://nodejs.org" target="_blank">nodejs.org</a> 下載 LTS 版（18 以上）。</p>
@@ -344,12 +323,16 @@ pip install -r requirements.txt</code></pre>
     </div>
 
     <div class="step">
-      <div class="step-num">6</div>
+      <div class="step-num">5</div>
       <div class="step-body">
         <strong>安裝 Claude Code 並登入</strong>
         <pre><code>npm install -g @anthropic/claude-code
 claude login   # 在瀏覽器完成帳號綁定，回到終端即完成</code></pre>
         <pre><code>claude --version   # 確認安裝成功</code></pre>
+        <div class="note ok">
+          安裝完成！後續只需在 slot-classifier 資料夾執行 <code>claude</code>，
+          Claude 會自動偵測環境狀態並引導完整分析流程。
+        </div>
       </div>
     </div>
   </section>
@@ -419,6 +402,10 @@ claude login   # 在瀏覽器完成帳號綁定，回到終端即完成</code></
         <strong>在專案根目錄啟動 Claude Code</strong>
         <pre><code>cd slot-classifier
 claude</code></pre>
+        <div class="note ok">
+          <strong>第一次啟動時：</strong>Claude 會自動偵測 .venv 是否存在，若環境尚未安裝，
+          會主動引導你完成 <code>python setup.py</code>，完成後自動接回分析流程。
+        </div>
       </div>
     </div>
 
