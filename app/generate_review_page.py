@@ -521,28 +521,27 @@ function applyCorrections() {{
     corrections: toApply,
   }};
 
-  const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-
-  if (isLocal) {{
-    fetch('/api/apply-corrections', {{
-      method: 'POST',
-      headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify(payload),
-    }}).then(function(r) {{ return r.json(); }}).then(function(data) {{
-      alert('&#x2705; 修正完成：' + JSON.stringify(data));
-    }}).catch(function(e) {{ alert('錯誤：' + e); }});
-  }} else {{
+  // 同 saveSymbol：直接用絕對 URL，無論 file:// 或網路磁碟皆可連到本機 Server
+  fetch('http://localhost:8765/api/apply-corrections', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify(payload),
+  }}).then(function(r) {{ return r.json(); }}).then(function(data) {{
+    alert('&#x2705; 修正完成：' + JSON.stringify(data));
+  }}).catch(function() {{
+    // Server 未啟動：fallback 複製 JSON 到剪貼板
     const jsonStr = JSON.stringify(payload, null, 2);
+    const msg = '⚠️ 無法連到本機 Server（localhost:8765）\n已改為複製 JSON 到剪貼板。\n\n啟動 Server 後直接重試，或把 JSON 貼給 Claude 請他套用：\n  python review_server.py --video-id {影片名}';
     if (navigator.clipboard && navigator.clipboard.writeText) {{
       navigator.clipboard.writeText(jsonStr).then(function() {{
-        alert('&#x2705; 修正 JSON 已複製到剪貼板！\\n\\n請在 chat 貼上：\\n「請套用這個修正清單」\\n然後把剪貼板的 JSON 貼上');
+        alert(msg);
       }}).catch(function() {{
         prompt('請複製以下 JSON 並貼到 chat：', jsonStr);
       }});
     }} else {{
       prompt('請複製以下 JSON 並貼到 chat：', jsonStr);
     }}
-  }}
+  }});
 }}
 
 // ── Symbol Review ──────────────────────────────────────────────────────────
@@ -722,33 +721,31 @@ function saveSymbol() {{
     label:      label,
   }};
 
-  const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  if (isLocal) {{
-    fetch('/api/save-symbol', {{
-      method: 'POST',
-      headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify(payload),
-    }}).then(function(r) {{ return r.json(); }}).then(function(data) {{
-      if (data.ok) {{
-        // 立刻加到 symbol grid
-        symbolList.push({{ filename: data.filename, b64: cropState.cropB64 }});
-        renderSymbolGrid();
-        closeCropModal();
-        alert('[OK] 已儲存：' + data.filename);
-      }} else {{
-        alert('[錯誤] ' + data.error);
-      }}
-    }}).catch(function(e) {{ alert('錯誤：' + e); }});
-  }} else {{
-    // 非 localhost：提示下載
+  // 無論從 file:// 或網路磁碟開啟，review_server 都跑在本機 localhost:8765
+  // 直接用絕對 URL POST，CORS 已設 *；只有 server 未啟動才 fallback 下載
+  fetch('http://localhost:8765/api/save-symbol', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify(payload),
+  }}).then(function(r) {{ return r.json(); }}).then(function(data) {{
+    if (data.ok) {{
+      symbolList.push({{ filename: data.filename, b64: cropState.cropB64 }});
+      renderSymbolGrid();
+      closeCropModal();
+      alert('[OK] 已儲存到 symbol_table/symbols/：' + data.filename);
+    }} else {{
+      alert('[錯誤] ' + data.error);
+    }}
+  }}).catch(function() {{
+    // Server 未啟動：fallback 下載，並提示啟動方式
     const a = document.createElement('a');
     const suffix = label ? '_' + label : '';
     a.download = 'symbol_manual' + suffix + '.png';
     a.href = 'data:image/png;base64,' + cropState.cropB64;
     a.click();
-    alert('已下載！請把檔案放到 symbol_table/symbols/ 資料夾');
+    alert('⚠️ 無法連到本機 Server（localhost:8765）\n\n已下載 PNG，請手動放到：\n  project/output/{影片名}/symbol_table/symbols/\n\n或先啟動 Server 再重試：\n  python review_server.py --video-id {影片名}');
     closeCropModal();
-  }}
+  }});
 }}
 
 let currentCat = 'all', currentConf = 'all';
