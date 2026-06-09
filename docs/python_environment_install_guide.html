@@ -292,10 +292,7 @@ bash classify_with_roi_confirm.sh --video-id WildTrain
 # 帶 ROI 座標直接分類
 bash classify_with_roi_confirm.sh --video-id WildTrain --roi 400,50,650,950</code></pre>
 
-  <div class="note warning">
-    Windows 使用者需透過 <strong>Git Bash</strong> 或 <strong>WSL</strong> 執行 <code>.sh</code> 腳本。<br>
-    或直接用 Python 執行：<code>python app/main.py --video-id WildTrain</code>
-  </div>
+  <div class="note warning">Windows 使用者需透過 <strong>Git Bash</strong> 執行 <code>.sh</code> 腳本。</div>
 
   <!-- 7. 常見問題 -->
   <h2 id="troubleshooting">7. 常見問題</h2>
@@ -335,11 +332,8 @@ pip install paddleocr==2.7.3</code></pre>
       <li>開終端，進入專案資料夾：
         <pre><code>cd D:\slot-classifier</code></pre>
       </li>
-      <li>建立並安裝環境：
-        <pre><code>python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt</code></pre>
+      <li>執行一鍵環境建立腳本，約 5～15 分鐘完成：
+        <pre><code>python setup.py</code></pre>
       </li>
       <li>安裝 Claude Code：
         <pre><code>npm install -g @anthropic/claude-code

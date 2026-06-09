@@ -197,7 +197,7 @@
         這個工具用來批次讀取遊戲錄影，自動擷取代表性截圖，並依照 slot 遊戲流程分類成 Basegame、Feature game、Big Win、Result、Transition、Help、Feature Buy、loading 與 Other。最新版已結合 symbol 裁切工具，跑完分類後會同步從 Help / Paytable 畫面輸出 symbol 圖，方便後續美術調研、競品整理、Figma / FigJam 視覺化與素材資料庫建立。
       </p>
       <div class="meta">
-        <span class="pill">最後更新：2026-05-15</span>
+        <span class="pill">最後更新：2026-06-09</span>
         <span class="pill">Python</span>
         <span class="pill">OpenCV</span>
         <span class="pill">PaddleOCR</span>
@@ -227,7 +227,8 @@
         </div>
         <div class="card">
           <h3>一鍵執行</h3>
-          <p>新增 <code>run_classify_and_symbols.bat</code>，可雙擊跑全部影片，也可用影片名稱只跑單一遊戲。</p>
+          <p>在專案資料夾執行 <code>claude</code>，告訴 Claude「幫我分析 WildTrain」，
+  即可完成 ROI 確認、分類、審核頁生成的完整流程。</p>
         </div>
       </div>
     </section>
@@ -460,8 +461,8 @@
             <td>從分類後的 Help / Paytable 圖中偵測 paytable 頁與 symbol component，輸出 <code>symbol_table/symbols</code>、HTML 與 contact sheet。</td>
           </tr>
           <tr>
-            <td><code>run_classify_and_symbols.bat</code></td>
-            <td>提供非工程使用者可直接執行的入口：雙擊跑全部 input 影片，或用影片名稱指定單一遊戲。</td>
+            <td><code>CLAUDE.md</code></td>
+            <td>Claude Code 啟動後自動載入的工作規則，引導完整分析流程（環境偵測 → 分類 → 審核 → 報告）。</td>
           </tr>
         </tbody>
       </table>
@@ -473,10 +474,9 @@
         <div class="card">
           <h3>主要執行方式</h3>
           <ul>
-            <li><code>run_classify_and_symbols.bat</code>：處理 <code>project/input_videos/</code> 內全部影片。</li>
-            <li><code>run_classify_and_symbols.bat "Perfect Strike"</code>：只處理指定影片，名稱對應影片檔名 stem。</li>
-            <li><code>run_classify_and_symbols.bat --skip-symbols</code>：只輸出分類截圖，不產生 symbol 圖。</li>
-            <li><code>run_classify_and_symbols.bat --video-id "Perfect Strike" --symbol-debug</code>：指定影片並輸出 symbol debug 圖。</li>
+            <li><strong>Claude Code（推薦）：</strong>在專案資料夾執行 <code>claude</code>，輸入「幫我分析 WildTrain」，Claude 自動完成全流程。</li>
+            <li><strong>手動腳本：</strong><code>bash classify_with_roi_confirm.sh --video-id WildTrain</code>：執行 ROI 確認 + 分類 + 審核頁生成。</li>
+            <li><strong>跳過 ROI 確認：</strong><code>bash run_classify_roi.sh --video-id WildTrain --roi x,y,w,h</code>：直接帶座標執行。</li>
           </ul>
         </div>
         <div class="card">

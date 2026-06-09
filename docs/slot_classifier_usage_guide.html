@@ -244,6 +244,10 @@
       <div class="step-body">
         <strong>在專案根目錄啟動 Claude Code</strong>
         <pre><code>claude</code></pre>
+        <div class="note success" style="margin-top:10px">
+  <strong>首次啟動：</strong>若 .venv 不存在，Claude 會自動偵測並引導你執行
+  <code>python setup.py</code> 完成環境安裝，安裝後自動接回分析流程。
+</div>
       </div>
     </div>
     <div class="step">
@@ -339,6 +343,11 @@
         <tr><th>步驟</th><th>動作</th><th>說明</th></tr>
       </thead>
       <tbody>
+        <tr>
+  <td>⓪</td>
+  <td>環境偵測</td>
+  <td><code>.venv</code> 不存在時自動引導 <code>python setup.py</code>，完成後接回流程</td>
+</tr>
         <tr>
           <td>①</td>
           <td>確認影片</td>
@@ -576,8 +585,8 @@ FRAME_INTERVAL = 30  # 預設 20，調高可加快速度</code></pre>
     <p><code>needs_review/</code> 是分類時的副本，<code>apply_corrections</code> 只移動主目錄的原始檔，副本可手動刪除，不影響 CSV 紀錄。</p>
 
     <h3>Q: Windows 下執行 .sh 腳本</h3>
-    <p>使用 Git Bash 或 WSL 執行 <code>.sh</code> 腳本。或在 WSL 中直接執行 Python：</p>
-    <pre><code>.venv/bin/python app/main.py --video-id WildTrain</code></pre>
+    <p>安裝 Git 時會一起安裝 <strong>Git Bash</strong>，在開始選單搜尋「Git Bash」開啟後，
+    輸入 <code>cd /d/slot-classifier</code>（依實際路徑調整）即可執行 <code>.sh</code> 腳本。</p>
   </section>
 
 </main>
