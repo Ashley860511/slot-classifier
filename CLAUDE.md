@@ -88,6 +88,41 @@ python app/generate_review_page.py project/output/{VIDEO_ID}
 主動說明可能原因（如 Help 頁只截到規則頁、paytable 滾動位置不完整），
 並建議用戶在 review.html 的 Symbol 審核區塊手動補切。
 
+### 步驟 8 — 主動確認審核完成，接著生成競品報告
+
+告知用戶所有審核步驟後，**主動詢問**：
+
+> 「請確認以下兩項都完成後告訴我：
+> 1. ✅ review.html 的截圖審核（改分類 / 排除）已套用
+> 2. ✅ Symbol 審核區塊已確認（有補切遺漏的 symbol）
+>
+> 完成後我會立刻幫你生成競品分析報告 (report.html)。」
+
+**收到用戶確認後**（例如「好了」「完成」「可以開始報告」），
+立刻使用 **slot-report skill** 生成競品分析報告：
+
+```
+# Claude 內部執行（使用 slot-report skill）
+觸發條件：用戶確認審核完成
+輸入：project/output/{VIDEO_ID}/
+輸出：project/output/{VIDEO_ID}/report.html
+```
+
+生成完成後回報：
+- 報告位置：`project/output/{VIDEO_ID}/report.html`
+- 提醒用戶可在瀏覽器開啟，並用「✏️ 編輯模式」替換圖片或修改文字
+
+**同時主動列出「可能有誤的欄位」**，讓用戶知道哪些需要人工確認，例如：
+
+> 報告已生成，以下欄位由 Claude 推斷，請人工核對：
+> - **開發商**：從畫面 Logo 推測，請確認
+> - **格局（Grid）**：從截圖目測，請確認格柱數
+> - **最高倍率**：從 Free Spins 畫面讀取，請對照 Help 頁
+> - **賠率數字**：從 OCR 讀取 Help 頁，可能有誤讀
+> - **Wild 規則**：從 Help 文字推斷，請確認觸發條件
+
+用戶在「✏️ 編輯模式」修改報告後，**修改內容會自動同步回 tags.json 與 assets.json**（由報告內建 JS 處理）。
+
 ---
 
 ## ROI 確認說明（給用戶）

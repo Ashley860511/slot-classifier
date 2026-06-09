@@ -334,7 +334,17 @@ def process_video(video_path, ocr_engine, video_output_dir, csv_path, progress_c
             continue
 
         exposure_score_val, exposure_reasons = overexposure_score(cropped)
-        if ENABLE_OVEREXPOSURE_FILTER and exposure_score_val >= OVEREXPOSURE_SCORE_THRESHOLD:
+        # Transition / Feature intro animations are full-screen bright effects that
+        # legitimately look overexposed (FS entry flash, win celebration).  During
+        # dense-sampling windows we raise the threshold by +2 so the intro frame is
+        # not lost entirely.  Pure white-flash frames (score >= threshold + 4) are
+        # still skipped because they carry no visual information.
+        _in_transition_dense = frame_idx <= transition_dense_until_frame
+        _in_feature_dense    = frame_idx <= feature_dense_until_frame
+        _overexp_threshold = (OVEREXPOSURE_SCORE_THRESHOLD + 2.0
+                              if (_in_transition_dense or _in_feature_dense)
+                              else OVEREXPOSURE_SCORE_THRESHOLD)
+        if ENABLE_OVEREXPOSURE_FILTER and exposure_score_val >= _overexp_threshold:
             print(
                 f"[{video_name}] frame {frame_idx} 跳過爆光圖 | "
                 f"exposure={exposure_score_val:.2f} | {', '.join(exposure_reasons)} | "

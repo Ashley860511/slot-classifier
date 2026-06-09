@@ -61,6 +61,14 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._handle_save_symbol()
             return
 
+        if path == "/api/sync-report-meta":
+            self._handle_sync_report_meta()
+            return
+
+        if path == "/api/save-report":
+            self._handle_save_report()
+            return
+
         self._text_response(404, "Not Found")
 
     def do_OPTIONS(self):
@@ -108,6 +116,94 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"ok": True, **summary})
         except Exception as e:
             self._json_response(500, {"ok": False, "error": str(e)})
+
+    def _handle_save_report(self):
+        """接收完整 HTML，覆寫 report.html。"""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except Exception as e:
+            self._json_response(400, {"ok": False, "error": f"JSON 解析失敗：{e}"})
+            return
+
+        output_dir = payload.get("output_dir") or _OUTPUT_DIR
+        html_content = payload.get("html", "")
+
+        if not html_content:
+            self._json_response(400, {"ok": False, "error": "缺少 html 內容"})
+            return
+        if not os.path.isdir(output_dir):
+            self._json_response(400, {"ok": False, "error": f"找不到 output_dir：{output_dir}"})
+            return
+
+        report_path = os.path.join(output_dir, "report.html")
+        try:
+            with open(report_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            print(f"[Report] 已儲存：{report_path}")
+            self._json_response(200, {"ok": True, "path": report_path})
+        except Exception as e:
+            self._json_response(500, {"ok": False, "error": str(e)})
+
+    def _handle_sync_report_meta(self):
+        """接收 report.html 編輯後的 meta，更新 tags.json 與 assets.json。"""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except Exception as e:
+            self._json_response(400, {"ok": False, "error": f"JSON 解析失敗：{e}"})
+            return
+
+        output_dir = payload.get("output_dir") or _OUTPUT_DIR
+        if not os.path.isdir(output_dir):
+            self._json_response(400, {"ok": False, "error": f"找不到 output_dir：{output_dir}"})
+            return
+
+        updated = []
+
+        # ── 更新 tags.json ──────────────────────────────────────────────────
+        tags_path = os.path.join(output_dir, "tags.json")
+        if os.path.exists(tags_path):
+            try:
+                with open(tags_path, "r", encoding="utf-8") as f:
+                    tags = json.load(f)
+                changed = False
+                for field in ("game", "developer", "reel_format", "payways", "max_win"):
+                    if field in payload and payload[field] != "":
+                        if tags.get(field) != payload[field]:
+                            tags[field] = payload[field]
+                            changed = True
+                if changed:
+                    with open(tags_path, "w", encoding="utf-8") as f:
+                        json.dump(tags, f, ensure_ascii=False, indent=2)
+                    updated.append("tags.json")
+                    print(f"[Sync] tags.json 已更新")
+            except Exception as e:
+                print(f"[Sync] tags.json 更新失敗：{e}")
+
+        # ── 更新 assets.json ────────────────────────────────────────────────
+        assets_path = os.path.join(output_dir, "assets.json")
+        if os.path.exists(assets_path):
+            try:
+                with open(assets_path, "r", encoding="utf-8") as f:
+                    assets = json.load(f)
+                changed = False
+                for field in ("game", "cover"):
+                    if field in payload and payload[field] != "":
+                        if assets.get(field) != payload[field]:
+                            assets[field] = payload[field]
+                            changed = True
+                if changed:
+                    with open(assets_path, "w", encoding="utf-8") as f:
+                        json.dump(assets, f, ensure_ascii=False, indent=2)
+                    updated.append("assets.json")
+                    print(f"[Sync] assets.json 已更新")
+            except Exception as e:
+                print(f"[Sync] assets.json 更新失敗：{e}")
+
+        self._json_response(200, {"ok": True, "updated": updated})
 
     def _handle_save_symbol(self):
         length = int(self.headers.get("Content-Length", 0))
