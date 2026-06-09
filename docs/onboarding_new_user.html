@@ -236,7 +236,7 @@
     <p>從零開始，到第一份競品報告出爐的完整操作步驟。</p>
     <div class="meta">
       <span class="pill">更新：2026-06-09</span>
-      <span class="pill">分支：perf/cpu-optimize-ocr</span>
+      <span class="pill">分支：main</span>
       <span class="pill">Python 3.10</span>
       <span class="pill">Claude Code CLI</span>
       <span class="pill">CPU-only</span>
@@ -283,10 +283,9 @@
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-body">
-        <strong>Clone 專案並切換到工作分支</strong>
+        <strong>Clone 專案</strong>
         <pre><code>git clone https://github.com/Ashley860511/slot-classifier.git
-cd slot-classifier
-git checkout perf/cpu-optimize-ocr</code></pre>
+cd slot-classifier</code></pre>
         <div class="note warn">
           Windows 使用者：建議把資料夾放到短路徑（如 <code>D:\slot-classifier</code>），
           避免 PaddleOCR 安裝時因路徑過長失敗。
@@ -639,7 +638,7 @@ pip install paddleocr==2.7.3</code></pre>
 
     <h3>Q: 取得最新版本</h3>
     <pre><code>git fetch origin
-git pull origin perf/cpu-optimize-ocr</code></pre>
+git pull origin main</code></pre>
 
     <h3>Q: slot-report Skill 找不到</h3>
     <p>確認 <code>skills/slot-report/SKILL.md</code> 存在，重新啟動 Claude Code。

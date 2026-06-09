@@ -59,7 +59,6 @@
 ```bash
 git clone https://github.com/Ashley860511/slot-classifier.git
 cd slot-classifier
-git checkout perf/cpu-optimize-ocr
 ```
 
 ### 3-2. 建立 Python 虛擬環境
@@ -396,4 +395,4 @@ FRAME_INTERVAL = 30  # 預設 20，調高可加快速度但會降低截圖密度
 
 ---
 
-*維護者：ashleyli　｜　分支：`perf/cpu-optimize-ocr`*
+*維護者：ashleyli　｜　分支：`main`*
