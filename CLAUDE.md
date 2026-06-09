@@ -99,7 +99,18 @@ python app/generate_review_page.py project/output/{VIDEO_ID}
 > 完成後我會立刻幫你生成競品分析報告 (report.html)。」
 
 **收到用戶確認後**（例如「好了」「完成」「可以開始報告」），
-立刻使用 **slot-report skill** 生成競品分析報告：
+在執行 slot-report skill 之前，**必須先完整閱讀以下資料夾的所有截圖**，確保對玩法機制有完整理解，再撰寫報告：
+
+### 報告前必讀截圖清單（依優先順序）
+
+1. **`Help/`** — 官方說明頁，包含賠率表、特殊符號說明、所有機制文字
+2. **`low_score/Help/`** — 同為說明頁但信心度較低，補充 Help/ 的捲動漏讀部分
+3. **`needs_review/`（各子資料夾）** — 低信心截圖，可能包含賠率頁的其他段落、特殊演出
+
+> **重點：賠率表通常跨多張截圖（頁面捲動），M4 / 低值符號賠率容易遺漏在後半段。
+> 機制說明（Cascade、Multiplier 觸發條件）須從 Help 文字確認，不可從截圖外觀推測。**
+
+確認閱讀完畢後，立刻使用 **slot-report skill** 生成競品分析報告：
 
 ```
 # Claude 內部執行（使用 slot-report skill）
