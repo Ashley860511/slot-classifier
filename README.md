@@ -63,6 +63,19 @@ cd slot-classifier
 
 ### 3-2. 建立 Python 虛擬環境
 
+**推薦：一行完成環境建立**
+
+```bash
+python setup.py
+```
+
+`setup.py` 會自動完成：Python 版本確認 → `.venv` 建立 → 套件安裝 → 環境驗證 → 目錄初始化，完成後會印出後續操作說明。
+
+> 📦 PaddleOCR 安裝約需 5～15 分鐘，視網路速度而定。
+
+<details>
+<summary>手動安裝（進階 / 疑難排解用）</summary>
+
 ```bash
 # 建立虛擬環境
 python3.10 -m venv .venv
@@ -76,8 +89,7 @@ source .venv/bin/activate
 # 安裝依賴
 pip install -r requirements.txt
 ```
-
-> 📦 PaddleOCR 安裝約需 3～10 分鐘，視網路速度而定。
+</details>
 
 ### 3-3. 安裝 Claude Code CLI
 

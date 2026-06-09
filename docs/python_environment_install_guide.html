@@ -199,7 +199,17 @@ cd slot-classifier</code></pre>
     <li>確認版本：<code>python --version</code></li>
   </ol>
 
-  <h3>3.2 建立虛擬環境</h3>
+  <h3>3.2 一鍵建立環境（推薦）</h3>
+  <div class="note success">
+    <strong>最簡單的方式：</strong>只要執行一行指令，自動完成虛擬環境建立、套件安裝與驗證。
+  </div>
+  <pre><code>python setup.py</code></pre>
+  <p>腳本會依序執行：Python 版本確認 → <code>.venv</code> 建立 → 套件安裝（約 5～15 分鐘）→ 環境驗證 → 目錄初始化，完成後印出後續操作說明。</p>
+
+  <details>
+    <summary style="cursor:pointer; color:#0f766e; font-weight:600; margin: 12px 0">▶ 手動安裝（進階 / 疑難排解用）</summary>
+
+  <h3 style="margin-top:14px">3.3 手動建立虛擬環境</h3>
   <pre><code># macOS / Linux
 python3.10 -m venv .venv
 source .venv/bin/activate
@@ -213,12 +223,13 @@ python -m venv .venv
     <code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>
   </div>
 
-  <h3>3.3 安裝套件</h3>
+  <h3>3.4 手動安裝套件</h3>
   <pre><code># 更新安裝工具
 pip install --upgrade pip setuptools wheel
 
 # 安裝專案套件（約 5～15 分鐘，視網路速度）
 pip install -r requirements.txt</code></pre>
+  </details>
 
   <p>目前 <code>requirements.txt</code> 主要包含：</p>
   <pre><code>numpy==1.26.4

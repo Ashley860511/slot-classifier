@@ -429,10 +429,10 @@
     <h2>常用指令</h2>
     <h3>建議主流程</h3>
     <ul>
-      <li><code>run_classify_and_symbols.bat</code>：處理 <code>project/input_videos/</code> 裡的全部影片，分類後同步輸出 symbol 圖。</li>
-      <li><code>run_classify_and_symbols.bat "Perfect Strike"</code>：只處理單一影片，名稱對應影片檔名 stem。</li>
-      <li><code>run_classify_and_symbols.bat --skip-symbols</code>：只跑分類，不產生 symbol 圖。</li>
-      <li><code>run_classify_and_symbols.bat --video-id "Perfect Strike" --symbol-debug</code>：指定單一影片並輸出 symbol debug 圖。</li>
+      <li><code>bash classify_with_roi_confirm.sh --video-id "PerfectStrike"</code>：完整流程（ROI 確認 + 分類 + symbol 提取），推薦入口。</li>
+      <li><code>bash run_classify.sh</code>：處理 <code>project/input_videos/</code> 裡的全部影片，分類後同步輸出 symbol 圖（不含 ROI 確認）。</li>
+      <li><code>bash run_classify.sh --video-id "PerfectStrike"</code>：只處理單一影片。</li>
+      <li><code>bash run_classify.sh --skip-symbols</code>：只跑分類，不產生 symbol 圖。</li>
     </ul>
     <h3>Symbol 工具單獨執行</h3>
     <ul>
