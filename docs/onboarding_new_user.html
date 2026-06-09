@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slot Classifier — 新使用者上手指南</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --text: #1f2933;
+      --muted: #5d6b7a;
+      --line: #d9dee7;
+      --accent: #0f766e;
+      --accent-strong: #0f4f49;
+      --accent-soft: #e7f6f3;
+      --warn: #9a3412;
+      --warn-soft: #fff7ed;
+      --ok: #166534;
+      --ok-soft: #edf9f0;
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+      --purple: #6d28d9;
+      --purple-soft: #f5f3ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft JhengHei", "Noto Sans TC", "Segoe UI", Arial, sans-serif;
+      line-height: 1.7;
+    }
+
+    main {
+      width: min(1060px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 40px 0 80px;
+    }
+
+    header {
+      padding-bottom: 24px;
+      border-bottom: 2px solid var(--accent);
+      margin-bottom: 8px;
+    }
+
+    h1 { margin: 0 0 8px; font-size: clamp(26px, 3.5vw, 38px); line-height: 1.2; }
+    h2 { margin: 0 0 14px; font-size: 22px; }
+    h3 { margin: 20px 0 8px; font-size: 16px; font-weight: 700; }
+
+    p { margin: 0 0 10px; color: var(--muted); }
+    strong { color: var(--text); }
+
+    section {
+      margin-top: 20px;
+      padding: 22px 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    section.phase {
+      border-left: 4px solid var(--accent);
+    }
+
+    .phase-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .step {
+      display: flex;
+      gap: 14px;
+      margin: 16px 0;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+
+    .step-body { flex: 1; }
+    .step-body p { margin: 4px 0 8px; }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #eef2f7;
+      color: #1a2035;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: .92em;
+    }
+
+    pre {
+      margin: 10px 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: var(--code-text);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 13.5px;
+      line-height: 1.55;
+      overflow-x: auto;
+    }
+
+    pre code { padding: 0; background: transparent; color: inherit; font-size: inherit; }
+
+    .note {
+      margin: 12px 0;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: 1px solid #b7ddd6;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-size: 14px;
+    }
+
+    .warn { border-color: #fcd9a8; background: var(--warn-soft); color: var(--warn); }
+    .ok   { border-color: #bbf7d0; background: var(--ok-soft);   color: var(--ok);   }
+    .tip  { border-color: #c4b5fd; background: var(--purple-soft); color: var(--purple); }
+
+    table {
+      width: 100%;
+      margin: 12px 0;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 9px 12px;
+      text-align: left;
+      vertical-align: top;
+      border: 1px solid var(--line);
+    }
+
+    th { background: #eef2f7; color: var(--text); font-weight: 700; }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .pill {
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0;
+      margin: 16px 0;
+      align-items: center;
+    }
+
+    .flow-box {
+      padding: 8px 14px;
+      border: 1.5px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+      min-width: 90px;
+    }
+
+    .flow-arrow {
+      padding: 0 8px;
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .toc {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .toc a {
+      display: block;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fafbfc;
+      color: var(--accent-strong);
+      font-weight: 700;
+      font-size: 13.5px;
+      text-decoration: none;
+    }
+
+    .toc a:hover { background: var(--accent-soft); }
+
+    @media (max-width: 720px) {
+      main { width: calc(100vw - 24px); }
+      .toc { grid-template-columns: 1fr 1fr; }
+      .flow { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+<main>
+
+  <!-- ── Header ── -->
+  <header>
+    <h1>Slot Classifier — 新使用者上手指南</h1>
+    <p>從零開始，到第一份競品報告出爐的完整操作步驟。</p>
+    <div class="meta">
+      <span class="pill">更新：2026-06-09</span>
+      <span class="pill">分支：perf/cpu-optimize-ocr</span>
+      <span class="pill">Python 3.10</span>
+      <span class="pill">Claude Code CLI</span>
+      <span class="pill">CPU-only</span>
+    </div>
+    <nav class="toc" style="margin-top:18px">
+      <a href="#overview">完整流程概覽</a>
+      <a href="#phase1">Phase 1：環境安裝</a>
+      <a href="#phase2">Phase 2：Skill 安裝</a>
+      <a href="#phase3">Phase 3：執行分析</a>
+      <a href="#phase4">Phase 4：審核修正</a>
+      <a href="#phase5">Phase 5：競品報告</a>
+      <a href="#faq">常見問題</a>
+    </nav>
+  </header>
+
+  <!-- ── 流程概覽 ── -->
+  <section id="overview">
+    <h2>完整流程概覽</h2>
+    <p>每次分析一款競品遊戲的完整路徑：</p>
+    <div class="flow">
+      <div class="flow-box">① 放入影片</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">② 啟動 claude</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">③ 確認 ROI</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">④ 自動分類</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">⑤ 瀏覽器審核</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">⑥ 競品報告</div>
+    </div>
+    <p style="margin-top:10px">步驟 ③～⑥ 全部由 Claude 在對話中協調，<strong>不需要手動執行任何指令</strong>。</p>
+    <div class="note ok">
+      <strong>一次安裝，之後每款遊戲只需：</strong>把 mp4 放進資料夾 → 打開 claude → 輸入「幫我分析 XXX」。
+    </div>
+  </section>
+
+  <!-- ── Phase 1：環境安裝 ── -->
+  <section id="phase1" class="phase">
+    <div class="phase-label">⚙️ Phase 1 — 環境安裝（只做一次）</div>
+    <h2>1. 取得專案</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Clone 專案並切換到工作分支</strong>
+        <pre><code>git clone https://github.com/Ashley860511/slot-classifier.git
+cd slot-classifier
+git checkout perf/cpu-optimize-ocr</code></pre>
+        <div class="note warn">
+          Windows 使用者：建議把資料夾放到短路徑（如 <code>D:\slot-classifier</code>），
+          避免 PaddleOCR 安裝時因路徑過長失敗。
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>安裝 Python 3.10</strong>
+        <p>前往 <a href="https://www.python.org/downloads/" target="_blank">python.org</a> 下載 Python 3.10，安裝時勾選 <strong>Add python.exe to PATH</strong>。</p>
+        <pre><code>python --version   # 確認顯示 Python 3.10.x</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>建立虛擬環境並安裝套件</strong>
+        <pre><code># macOS / Linux
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
+
+# Windows PowerShell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt</code></pre>
+        <p>安裝時間約 5～15 分鐘（PaddleOCR 套件較大）。</p>
+        <div class="note warn">
+          Windows PowerShell 若出現「無法載入 .ps1」：先執行
+          <code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <strong>確認 Python 環境正常</strong>
+        <pre><code>python check_environment.py</code></pre>
+        <p>看到各套件版本無誤即完成。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <strong>安裝 Node.js（Claude Code 前置）</strong>
+        <p>前往 <a href="https://nodejs.org" target="_blank">nodejs.org</a> 下載 LTS 版（18 以上）。</p>
+        <pre><code>node --version   # 需顯示 v18.x 以上</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <strong>安裝 Claude Code 並登入</strong>
+        <pre><code>npm install -g @anthropic/claude-code
+claude login   # 在瀏覽器完成帳號綁定，回到終端即完成</code></pre>
+        <pre><code>claude --version   # 確認安裝成功</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Phase 2：Skill 安裝 ── -->
+  <section id="phase2" class="phase">
+    <div class="phase-label">🧩 Phase 2 — 安裝 slot-report Skill（只做一次）</div>
+    <h2>安裝競品報告生成 Skill</h2>
+    <p>
+      Skill 是 Claude Code 的外掛，負責讀取分類截圖並自動生成 <code>report.html</code> 競品分析報告。
+      安裝說明在 <code>claude/ONBOARDING.md</code>，以下是快速流程：
+    </p>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>找到 Claude Code 的 skills 資料夾</strong>
+        <p>在 Claude Code 對話中輸入：</p>
+        <pre><code>/skills</code></pre>
+        <p>或直接前往（Windows）：</p>
+        <pre><code>%APPDATA%\Claude\local-agent-mode-sessions\skills-plugin\&lt;uuid&gt;\&lt;uuid&gt;\skills\</code></pre>
+        <p>macOS / Linux：</p>
+        <pre><code>~/.claude/skills/</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>建立 slot-report 子目錄並複製 SKILL.md</strong>
+        <p>在 skills 資料夾內新增 <code>slot-report/</code>，將 <code>claude/ONBOARDING.md</code> 內的 SKILL.md 內容貼入：</p>
+        <pre><code>skills/
+└── slot-report/
+    └── SKILL.md   ← 從 claude/ONBOARDING.md 複製內容</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>重新啟動 Claude Code</strong>
+        <p>關閉並重開 <code>claude</code>，Skill 即可使用。</p>
+        <div class="note ok">
+          驗證：在 Claude Code 輸入 <code>/skills</code>，看到 <strong>slot-report</strong> 列出即安裝成功。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Phase 3：執行分析 ── -->
+  <section id="phase3" class="phase">
+    <div class="phase-label">🎬 Phase 3 — 執行分析（每次使用）</div>
+    <h2>開始分析競品遊戲</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>把影片放入 input_videos/</strong>
+        <pre><code>project/input_videos/WildTrain.mp4</code></pre>
+        <p>支援 <code>.mp4</code>，檔案名即為輸出資料夾名稱，建議使用英文。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>在專案根目錄啟動 Claude Code</strong>
+        <pre><code>cd slot-classifier
+claude</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>告訴 Claude 開始分析</strong>
+        <pre><code>幫我分析 WildTrain</code></pre>
+        <p>Claude 會自動確認影片存在，然後執行 Auto ROI 偵測。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <strong>確認 ROI 邊框</strong>
+        <p>Claude 輸出 <code>WAITING_ROI_CONFIRM:</code> 後，會告知你一個本機路徑：</p>
+        <pre><code>project/output/WildTrain/_debug/roi_adjust.html</code></pre>
+        <p>用瀏覽器開啟，檢查綠色邊框是否對齊遊戲畫面：</p>
+        <table>
+          <thead><tr><th>情況</th><th>操作</th><th>回覆 Claude</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>邊框位置正確</td>
+              <td>不需調整</td>
+              <td><code>ROI OK</code></td>
+            </tr>
+            <tr>
+              <td>邊框需要調整</td>
+              <td>拖曳四角/側邊 → 按「✅ 確認 ROI」→ 貼上複製的座標</td>
+              <td><code>ROI 確認：400,50,650,950</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <strong>等待分類完成</strong>
+        <p>Claude 收到 ROI 確認後自動執行：</p>
+        <ol style="color:var(--muted)">
+          <li>截圖分類（Basegame / Feature / BigWin / Transition / Result / Help…）</li>
+          <li>計算信心分數（high / medium / low）</li>
+          <li>從 Help 頁自動提取 Symbol 圖</li>
+          <li>生成 review.html 審核頁</li>
+          <li>啟動本機審核 Server（<code>http://localhost:8765</code>）</li>
+        </ol>
+        <p>4 分鐘影片約需 <strong>5～10 分鐘</strong>（CPU-only 環境）。首次執行會額外下載 PaddleOCR 語言模型（約 300 MB）。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Phase 4：審核修正 ── -->
+  <section id="phase4" class="phase">
+    <div class="phase-label">🔍 Phase 4 — 人工審核修正</div>
+    <h2>在瀏覽器審核截圖與 Symbol</h2>
+    <p>分類完成後，Claude 會告知你開啟 <code>http://localhost:8765</code>。</p>
+
+    <h3>Part A：截圖分類審核</h3>
+    <table>
+      <thead><tr><th>信心等級</th><th>標籤</th><th>建議動作</th></tr></thead>
+      <tbody>
+        <tr><td><code>high</code></td><td>🟢 綠色</td><td>直接跳過，分類確定</td></tr>
+        <tr><td><code>medium</code></td><td>🟡 黃色</td><td>快速掃一眼，有問題再修正</td></tr>
+        <tr><td><code>low</code></td><td>🔴 紅色</td><td>建議確認，視情況改分類或排除</td></tr>
+      </tbody>
+    </table>
+
+    <p>每張卡片可操作：</p>
+    <ul>
+      <li><strong>✅ 正確</strong>：標記確認，不移動檔案</li>
+      <li><strong>🔀 改分類</strong>：選正確類別，套用後截圖移到對應資料夾</li>
+      <li><strong>🗑️ 排除</strong>：移到 <code>excluded/</code>，從統計中移除</li>
+    </ul>
+    <p>全部處理後按「<strong>套用修正</strong>」，CSV 與截圖自動更新。</p>
+
+    <h3>Part B：Symbol 審核（頁面最底部）</h3>
+    <p>捲到 review.html 最底部，可以看到 Symbol 審核區塊：</p>
+    <ol style="color:var(--muted)">
+      <li>上方格子顯示已自動提取的 Symbol 圖，確認是否完整</li>
+      <li>若有遺漏（例如某張麻將牌、特殊符號）：
+        <br>→ 點擊下方 Help 截圖縮圖
+        <br>→ 在彈出的裁切工具上<strong>拖曳框選</strong>遺漏的 symbol
+        <br>→ 輸入名稱（選填）→「<strong>✅ 加入為 Symbol</strong>」</li>
+    </ol>
+
+    <div class="note tip">
+      <strong>localhost 環境（直接使用）：</strong>點擊「加入」後自動儲存到
+      <code>symbol_table/symbols/symbol_manual_001.png</code>，不需手動操作。<br><br>
+      <strong>非 localhost（網路磁碟 / file:// 開啟）：</strong>點擊後會下載 PNG，請手動放到
+      <code>project/output/WildTrain/symbol_table/symbols/</code>
+    </div>
+
+    <h3>完成後回報 Claude</h3>
+    <p>兩項都完成後，Claude 會主動詢問你，回覆即可：</p>
+    <pre><code>完成了 / 好了 / 可以開始報告</code></pre>
+  </section>
+
+  <!-- ── Phase 5：競品報告 ── -->
+  <section id="phase5" class="phase">
+    <div class="phase-label">📄 Phase 5 — 競品報告生成</div>
+    <h2>生成 report.html</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Claude 自動生成報告</strong>
+        <p>收到你的確認後，Claude 使用 <strong>slot-report skill</strong> 讀取分類截圖與 Symbol，生成：</p>
+        <pre><code>project/output/WildTrain/report.html</code></pre>
+        <p>報告包含三大段落：</p>
+        <ul>
+          <li>📊 <strong>符號賠率表</strong>：特殊符號（Scatter/Wild）、主力符號、低值符號</li>
+          <li>🃏 <strong>玩法機制</strong>：觸發條件、特效規則、連鎖機制</li>
+          <li>🗺 <strong>遊戲流程圖</strong>：主遊戲 + Free Spin 雙列橫向流程</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>確認 Claude 列出的「待核對欄位」</strong>
+        <p>Claude 生成後會主動列出以下欄位，請對照 Help 頁截圖逐一確認：</p>
+        <table>
+          <thead><tr><th>欄位</th><th>來源</th><th>建議確認方式</th></tr></thead>
+          <tbody>
+            <tr><td>開發商</td><td>畫面 Logo 推測</td><td>對照片頭或 Help 頁 Logo</td></tr>
+            <tr><td>格局（Grid）</td><td>截圖目測</td><td>確認格柱數</td></tr>
+            <tr><td>最高倍率</td><td>Free Spins 畫面 OCR</td><td>對照 Help 頁數值</td></tr>
+            <tr><td>賠率數字</td><td>OCR 讀取 Help 頁</td><td>可能有誤讀，需人工核對</td></tr>
+            <tr><td>Wild 規則</td><td>Help 文字推斷</td><td>確認觸發條件</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>在瀏覽器開啟報告並編輯（選做）</strong>
+        <p>用瀏覽器開啟 <code>report.html</code>，點擊右上角「✏️ 編輯模式」：</p>
+        <ul>
+          <li>點擊圖片 → 替換為其他截圖</li>
+          <li>點擊文字 → 直接修改</li>
+          <li>修改後自動回寫 <code>tags.json</code> 與 <code>assets.json</code>（localhost 環境）</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 輸出目錄 ── -->
+  <section>
+    <h2>完成後的輸出目錄結構</h2>
+    <pre><code>project/output/WildTrain/
+├── Basegame/                     # 一般遊戲畫面
+├── Feature game/                 # 特殊功能進行中
+├── BigWin/                       # 大獎演出
+├── Transition/                   # 轉場畫面
+├── Result/                       # 結算畫面
+├── Help/                         # 說明頁（Symbol 提取來源）
+├── loading/                      # 載入畫面
+├── Other/                        # 無法歸類
+├── needs_review/                 # 中低信心截圖副本（分類完成後可刪）
+├── excluded/                     # 人工審核後排除的截圖
+├── symbol_table/
+│   ├── symbols/
+│   │   ├── symbol_candidate_001_*.png   # 自動提取
+│   │   └── symbol_manual_001*.png       # 手動補切
+│   └── icon_candidates/          # 候選池（供除錯）
+├── _debug/
+│   ├── auto_roi_preview.jpg      # ROI 偵測預覽
+│   └── roi_adjust.html           # 互動式 ROI 調整頁
+├── classification_result.csv     # 完整分類紀錄（含信心分數）
+├── review.html                   # 審核頁（截圖 + Symbol 審核）
+├── report.html                   # 競品分析報告
+├── tags.json                     # 報告 meta（遊戲名、開發商、格局…）
+└── assets.json                   # 報告素材對照表</code></pre>
+  </section>
+
+  <!-- ── 常見問題 ── -->
+  <section id="faq">
+    <h2>常見問題</h2>
+
+    <h3>Q: Windows 下執行 .sh 腳本出錯</h3>
+    <p>Claude Code 的對話觸發不需要你手動跑 <code>.sh</code>。若真的需要手動執行，請用 <strong>Git Bash</strong> 或 <strong>WSL</strong>，不是 PowerShell。</p>
+
+    <h3>Q: PaddleOCR 安裝失敗（Windows Long Path）</h3>
+    <ol style="color:var(--muted)">
+      <li>把專案移到短路徑，如 <code>D:\slot-classifier</code></li>
+      <li>刪除 <code>.venv</code> 後重新建立</li>
+    </ol>
+    <p>若仍失敗，以系統管理員執行：</p>
+    <pre><code>New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+  -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force</code></pre>
+
+    <h3>Q: PaddleOCR 分開安裝</h3>
+    <pre><code>pip install paddlepaddle==2.6.2
+pip install paddleocr==2.7.3</code></pre>
+
+    <h3>Q: 第一次跑很慢（幾分鐘沒動靜）</h3>
+    <p>首次執行 PaddleOCR 會自動下載語言模型（約 300 MB），需要網路連線，屬正常現象。</p>
+
+    <h3>Q: review server port 8765 已被占用</h3>
+    <p>告知 Claude：「請用 port 8766 啟動 server」，或手動：</p>
+    <pre><code>.venv/bin/python review_server.py --video-id WildTrain --port 8766</code></pre>
+
+    <h3>Q: Symbol 只提取到 0 或 1 個</h3>
+    <p>原因通常是 Help 頁只截到規則頁（文字頁），沒有截到賠率表（圖示頁）。
+    在 review.html Symbol 審核區塊，點擊 Help 截圖，手動框選遺漏的 symbol。</p>
+
+    <h3>Q: 想重新分類（重跑整個流程）</h3>
+    <p>直接對 Claude 說：</p>
+    <pre><code>刪掉 WildTrain 的輸出，重新分析</code></pre>
+    <p>Claude 會確認後刪除 <code>project/output/WildTrain/</code>，重新執行。</p>
+
+    <h3>Q: 取得最新版本</h3>
+    <pre><code>git fetch origin
+git pull origin perf/cpu-optimize-ocr</code></pre>
+
+    <h3>Q: slot-report Skill 找不到</h3>
+    <p>確認 <code>skills/slot-report/SKILL.md</code> 存在，重新啟動 Claude Code。
+    詳細安裝說明在 <code>claude/ONBOARDING.md</code>。</p>
+  </section>
+
+  <!-- ── 效能參考 ── -->
+  <section>
+    <h2>效能參考</h2>
+    <table>
+      <thead><tr><th>設定</th><th>預設值</th><th>說明</th></tr></thead>
+      <tbody>
+        <tr><td><code>FRAME_INTERVAL</code></td><td>20 幀取 1 張</td><td>調高可加快速度，調低可提升截圖密度</td></tr>
+        <tr><td><code>OCR_MAX_SIDE</code></td><td>480 px</td><td>OCR 輸入上限，自動縮圖後還原座標</td></tr>
+        <tr><td><code>cpu_threads</code></td><td>2 核心</td><td>限制 PaddleOCR 佔用，避免主機過載</td></tr>
+      </tbody>
+    </table>
+    <p>調整取樣密度：修改 <code>app/constants.py</code> 的 <code>FRAME_INTERVAL</code>。</p>
+  </section>
+
+</main>
+</body>
+</html>
