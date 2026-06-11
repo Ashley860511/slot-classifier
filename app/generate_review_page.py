@@ -531,7 +531,7 @@ function applyCorrections() {{
   }}).catch(function() {{
     // Server 未啟動：fallback 複製 JSON 到剪貼板
     const jsonStr = JSON.stringify(payload, null, 2);
-    const msg = '⚠️ 無法連到本機 Server（localhost:8765）\n已改為複製 JSON 到剪貼板。\n\n啟動 Server 後直接重試，或把 JSON 貼給 Claude 請他套用：\n  python review_server.py --video-id {影片名}';
+    const msg = '⚠️ 無法連到本機 Server（localhost:8765）\\n已改為複製 JSON 到剪貼板。\\n\\n啟動 Server 後直接重試，或把 JSON 貼給 Claude 請他套用：\\n  python review_server.py --video-id {{影片名}}';
     if (navigator.clipboard && navigator.clipboard.writeText) {{
       navigator.clipboard.writeText(jsonStr).then(function() {{
         alert(msg);
@@ -743,7 +743,7 @@ function saveSymbol() {{
     a.download = 'symbol_manual' + suffix + '.png';
     a.href = 'data:image/png;base64,' + cropState.cropB64;
     a.click();
-    alert('⚠️ 無法連到本機 Server（localhost:8765）\n\n已下載 PNG，請手動放到：\n  project/output/{影片名}/symbol_table/symbols/\n\n或先啟動 Server 再重試：\n  python review_server.py --video-id {影片名}');
+    alert('⚠️ 無法連到本機 Server（localhost:8765）\\n\\n已下載 PNG，請手動放到：\\n  project/output/{{影片名}}/symbol_table/symbols/\\n\\n或先啟動 Server 再重試：\\n  python review_server.py --video-id {{影片名}}');
     closeCropModal();
   }});
 }}

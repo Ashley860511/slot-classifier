@@ -27,7 +27,7 @@ uname -s 2>/dev/null || echo "Windows"
 ```
 
 - Linux / Darwin（macOS）→ 使用 `bash` 指令
-- Windows → 所有 bash 指令改為透過 **Git Bash** 執行，並提示用戶開啟 Git Bash
+- Windows → **不使用 bash 腳本**，改用 PowerShell 直接呼叫 `.venv\Scripts\python.exe`（見下方 Windows 執行規則）
 
 ---
 
@@ -85,15 +85,13 @@ ls project/input_videos/
 bash classify_with_roi_confirm.sh --video-id {VIDEO_ID}
 ```
 
-**Windows（提示用戶在 Git Bash 執行）：**
-```bash
-bash classify_with_roi_confirm.sh --video-id {VIDEO_ID}
+**Windows（PowerShell）：**
+```powershell
+cd "C:\Users\ashleyli\Documents\slot-classifier"
+.\.venv\Scripts\python.exe app\generate_roi_preview.py --video-id {VIDEO_ID}
 ```
 
-若用戶不知道如何開 Git Bash，引導：
-> 「請在開始選單搜尋『Git Bash』，開啟後輸入：
->  `cd /d/slot-classifier`（D 槽）或 `cd ~/slot-classifier`（其他位置），
->  再輸入上面的指令。」
+> ⚠️ Windows 上**不要用 bash 腳本**，原因見「Windows 踩坑紀錄」。
 
 腳本輸出包含 `WAITING_ROI_CONFIRM:` 時，告知用戶用瀏覽器開啟：
 `project/output/{VIDEO_ID}/_debug/roi_adjust.html`
@@ -111,8 +109,15 @@ bash classify_with_roi_confirm.sh --video-id {VIDEO_ID}
 
 ### 步驟 4 — 執行分類
 
+**macOS / Linux：**
 ```bash
 bash classify_with_roi_confirm.sh --video-id {VIDEO_ID} --roi {x,y,w,h}
+```
+
+**Windows（PowerShell）：**
+```powershell
+cd "C:\Users\ashleyli\Documents\slot-classifier"
+.\.venv\Scripts\python.exe run_classify_roi.py --video-id {VIDEO_ID} --roi {x,y,w,h}
 ```
 
 告知用戶：「分類需 5～15 分鐘，完成後會自動啟動審核 Server，請耐心等候。」
@@ -132,9 +137,13 @@ python app/generate_review_page.py project/output/{VIDEO_ID}
 > - Help：XX 張
 > - needs_review（需人工確認）：XX 張
 >
-> 審核頁已生成，請用瀏覽器開啟：
-> http://localhost:8765
-> 或直接開啟檔案：project/output/{VIDEO_ID}/review.html」
+> **審核頁（review.html）** 需啟動 Server 後開啟，按鈕才能正常運作：
+> → 啟動後請用 **http://localhost:8765**
+>
+> ⚠️ 請勿直接用 file:// 開啟 review.html，否則 Symbol 圖片無法顯示，排除/正確按鈕也會失效。
+>
+> **競品報告（report.html）** 是純靜態頁面，不需要 Server，可直接用檔案路徑開啟：
+> → `project/output/{VIDEO_ID}/report.html`」
 
 ### 步驟 6 — 啟動審核 Server（若未自動啟動）
 
@@ -229,6 +238,32 @@ with open('project/output/{VIDEO_ID}/classification_result.csv') as f:
 > - **賠率數字**：OCR 讀取，可能有誤讀
 > - **Wild 規則**：從 Help 文字推斷，請確認觸發條件
 
+### 步驟 9 — 人工審閱報告，完成後備份到 fileserver
+
+告知用戶：
+> 「報告已生成！請用以下方式審閱與修改：
+>
+> **審閱 + 換圖（需 Server）：**
+> 1. 啟動 Server：`.\.venv\Scripts\python.exe review_server.py --video-id {VIDEO_ID}`
+> 2. 開啟 `http://localhost:8765/report`
+> 3. 點「✏️ 編輯模式」可替換任何圖片（換圖自動寫回磁碟）
+> 4. 點「✅ 完成編輯」自動儲存 report.html
+>
+> **純瀏覽（無需 Server）：**
+> → 直接開啟 `project/output/{VIDEO_ID}/report.html`
+>
+> 確認報告內容正確後，告訴我，我會幫你備份到 fileserver。」
+
+**收到用戶確認報告已完成後**，執行備份：
+
+```powershell
+cd "C:\Users\ashleyli\Documents\slot-classifier"
+powershell -ExecutionPolicy Bypass -File archive_to_fileserver.ps1 -VideoId {VIDEO_ID}
+```
+
+備份完成後告知用戶：
+> 「✅ 已備份到 fileserver！包含 report.html、tags.json、assets.json 及所有截圖與符號圖片。」
+
 ---
 
 ## 核心指令速查
@@ -282,3 +317,52 @@ project/output/{VIDEO_ID}/
 
 - 禁止直接修改 `project/output/` 內已分類的截圖（會破壞 CSV 索引）
 - 禁止在分類進行中刪除輸出目錄
+
+---
+
+## Windows 踩坑紀錄
+
+### 1. 不要用 bash 腳本（`classify_with_roi_confirm.sh`）
+
+bash 腳本在 Windows 有兩個致命問題，**一律改用 PowerShell 直接呼叫 Python**：
+
+| 問題 | 症狀 | 原因 |
+|------|------|------|
+| `.venv/bin/python` 不存在 | exit code 127 | Windows venv 路徑是 `.venv\Scripts\python.exe`，bash 腳本寫死 Linux 路徑 |
+| Git Bash 路徑轉換 crash | `fatal error - add_item failed` / exit code 5 | Git Bash 把 Windows 路徑轉 Unix 時若含特殊字元或空格會崩潰 |
+
+**Windows 正確指令：**
+```powershell
+# ROI 偵測
+cd "C:\Users\ashleyli\Documents\slot-classifier"
+.\.venv\Scripts\python.exe app\generate_roi_preview.py --video-id {VIDEO_ID}
+
+# 執行分類
+.\.venv\Scripts\python.exe run_classify_roi.py --video-id {VIDEO_ID} --roi {x,y,w,h}
+
+# 生成審核頁
+.\.venv\Scripts\python.exe app\generate_review_page.py project\output\{VIDEO_ID}
+```
+
+### 2. Video ID 不能含空格或特殊字元
+
+影片名稱如 `Pinata Wins.mp4` → video-id 必須改為 `PinataWins`。
+
+流程：
+1. 影片可以放在任何地方，**複製**一份到 `project\input_videos\`
+2. 複製時用無空格的 CamelCase 命名：`PinataWins.mp4`
+3. video-id 對應無空格的檔名（不含副檔名）：`--video-id PinataWins`
+
+**命名規則：**
+- ✅ `PinataWins`、`SugarKaboom`、`WildTrain`
+- ❌ `Pinata Wins`（空格）、`Sugar-Kaboom`（連字符可能引發問題）
+
+### 3. 除錯步驟
+
+遇到 PowerShell 背景任務失敗時，**先看完整 output 內容**：
+
+| exit code | 意義 | 排查方向 |
+|-----------|------|----------|
+| 127 | 指令找不到 | 確認 python 路徑是否正確（`Scripts` vs `bin`） |
+| 1 | 腳本邏輯錯誤 | 看 stderr 訊息，通常有明確說明 |
+| 5 | Git Bash 路徑崩潰 | 改用 PowerShell，或確認 video-id 不含空格 |

@@ -16,6 +16,7 @@ import os
 import re
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import unquote
 
 # apply_corrections 模組與本檔案同目錄
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -44,11 +45,17 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._serve_review_html()
             return
 
+        if path == "/report":
+            self._serve_static_file("report.html")
+            return
+
         if path == "/status":
             self._json_response(200, {"ok": True, "video_id": _VIDEO_ID, "port": PORT})
             return
 
-        self._text_response(404, "Not Found")
+        # 靜態檔案服務（圖片、CSS、JS 等）
+        self._serve_static(path)
+        return
 
     def do_POST(self):
         path = self.path.split("?")[0].rstrip("/")
@@ -69,6 +76,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._handle_save_report()
             return
 
+        if path == "/api/replace-image":
+            self._handle_replace_image()
+            return
+
         self._text_response(404, "Not Found")
 
     def do_OPTIONS(self):
@@ -86,15 +97,50 @@ class ReviewHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _serve_review_html(self):
-        html_path = os.path.join(_OUTPUT_DIR, "review.html")
-        if not os.path.exists(html_path):
-            self._text_response(404, f"review.html not found at {html_path}")
+        self._serve_static_file("review.html")
+
+    def _serve_static_file(self, filename: str):
+        file_path = os.path.join(_OUTPUT_DIR, filename)
+        if not os.path.exists(file_path):
+            self._text_response(404, f"{filename} not found at {file_path}")
             return
-        with open(html_path, "rb") as f:
+        with open(file_path, "rb") as f:
             content = f.read()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
+    def _serve_static(self, path: str):
+        """服務 output_dir 下的靜態檔案（圖片 / JSON 等）。"""
+        rel = unquote(path.lstrip("/"))  # 解碼 %20 等 URL 編碼
+        if not rel:
+            self._text_response(404, "Not Found")
+            return
+        full_path = os.path.realpath(os.path.join(_OUTPUT_DIR, rel))
+        output_real = os.path.realpath(_OUTPUT_DIR)
+        if not full_path.startswith(output_real):
+            self._text_response(403, "Forbidden")
+            return
+        if not os.path.isfile(full_path):
+            self._text_response(404, "Not Found")
+            return
+        ext = os.path.splitext(full_path)[1].lower()
+        mime_map = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp",
+            ".html": "text/html; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".css": "text/css", ".js": "application/javascript",
+        }
+        mime = mime_map.get(ext, "application/octet-stream")
+        with open(full_path, "rb") as f:
+            content = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(content)
 
@@ -204,6 +250,44 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 print(f"[Sync] assets.json 更新失敗：{e}")
 
         self._json_response(200, {"ok": True, "updated": updated})
+
+    def _handle_replace_image(self):
+        """接收新圖片 base64，覆寫 output_dir 內的原始檔案，path 不變所以 assets.json 自動同步。"""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except Exception as e:
+            self._json_response(400, {"ok": False, "error": f"JSON 解析失敗：{e}"})
+            return
+
+        output_dir   = payload.get("output_dir") or _OUTPUT_DIR
+        original_src = unquote(payload.get("original_src", "").strip())
+        image_b64    = payload.get("image_b64", "")
+
+        if not original_src or not image_b64:
+            self._json_response(400, {"ok": False, "error": "缺少 original_src 或 image_b64"})
+            return
+
+        # 移除 data URL 前綴
+        if "," in image_b64:
+            image_b64 = image_b64.split(",", 1)[1]
+
+        # 安全性：確認路徑在 output_dir 內
+        target = os.path.realpath(os.path.join(output_dir, original_src))
+        if not target.startswith(os.path.realpath(output_dir)):
+            self._json_response(403, {"ok": False, "error": "路徑不合法"})
+            return
+
+        try:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "wb") as f:
+                f.write(base64.b64decode(image_b64))
+            print(f"[ReplaceImage] 已覆寫：{target}")
+            # assets.json 路徑不變（覆寫同一檔案），無需額外更新
+            self._json_response(200, {"ok": True, "path": original_src})
+        except Exception as e:
+            self._json_response(500, {"ok": False, "error": str(e)})
 
     def _handle_save_symbol(self):
         length = int(self.headers.get("Content-Length", 0))
